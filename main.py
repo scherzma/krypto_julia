@@ -1,51 +1,72 @@
+
 import base64
 import json
 import sys
-
-
-def add_numbers(case):
-    args = case["arguments"]
-    return {"sum": args["number1"] + args["number2"]}
-
-def subtract_numbers(case):
-    args = case["arguments"]
-    return {"difference": args["number1"] - args["number2"]}
+from functools import reduce
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 
 def poly2block(case):
-    res = 0
-    for i in case["arguments"]["coefficients"]:
-        res |= 1 << i
-
+    res = coefficients2number(case["arguments"]["coefficients"])
     res_bytes = res.to_bytes((res.bit_length() + 7) // 8, byteorder='little')
-    res_b64 = base64.b64encode(res_bytes).decode('utf-8')
-    return {"block": res_b64}
+    return {"block": base64.b64encode(res_bytes).decode('utf-8')}
 
 
 def block2poly(case):
-    res_bytes = base64.b64decode(case["arguments"]["block"])
-    coefficients = []
+    return {"coefficients": number2coefficients(frombase64(case["arguments"]["block"]))}
 
-    byte_length = len(res_bytes)
+coefficients2number = lambda coefficients: sum(1 << i for i in coefficients)
+number2coefficients = lambda number: [i for i in range(number.bit_length()) if number & (1 << i)]
+add_numbers = lambda case: {"sum": case["arguments"]["number1"] + case["arguments"]["number2"]}
+subtract_numbers = lambda case: {"difference": case["arguments"]["number1"] - case["arguments"]["number2"]}
+frombase64 = lambda s: int.from_bytes(base64.b64decode(s), byteorder='little')
+tobase64l = lambda number: base64.b64encode(number.to_bytes(16, byteorder='little')).decode('utf-8')
+tobase64b = lambda number: base64.b64encode(number.to_bytes(16, byteorder='big')).decode('utf-8')
 
-    for byte_index in range(byte_length):
-        current_byte = res_bytes[byte_index]
-        for bit_index in range(8):  # 8 bits in a byte
-            if current_byte & (1 << bit_index):
-                coefficients.append(byte_index * 8 + bit_index)
 
-    return {"coefficients": coefficients}
+def gfmul(case, modulus=0x100000000000000000000000000000087):
+    a, b = frombase64(case["arguments"]["a"]), frombase64(case["arguments"]["b"])
+    res = reduce(lambda x,i: x ^ ((a << i) if b & (1 << i) else 0), range(b.bit_length()), 0)
+    res = reduce(lambda x,i: x ^ ((modulus << (i - 128)) if x & (1 << i) else 0), range(res.bit_length()-1, 127, -1), res)
 
-def block2poly2(case):
-    res_bytes = base64.b64decode(case["arguments"]["block"])
-    res_int = int.from_bytes(res_bytes, byteorder='little')
-    coefficients = []
+    return {"product": tobase64l(res)}
 
-    for i in range(res_int.bit_length()):
-        if res_int & (1 << i):
-            coefficients.append(i)
+def sea128(case):
+    arguments = case["arguments"]
+    mode = arguments["mode"]
+    key = arguments["key"]
+    input_data = arguments["input"]
 
-    return {"coefficients": coefficients}
+    sea128_const = 0xc0ffeec0ffeec0ffeec0ffeec0ffee11
+
+    key_bytes = base64.b64decode(key)
+    input_bytes = base64.b64decode(input_data)
+
+    cipher = Cipher(algorithms.AES(key_bytes), modes.ECB())
+
+    if mode == "encrypt":
+        encryptor = cipher.encryptor()
+        aes_result = encryptor.update(input_bytes) + encryptor.finalize()
+        int_result = int.from_bytes(aes_result, byteorder='big') ^ sea128_const
+
+    elif mode == "decrypt":
+        input_int = int.from_bytes(input_bytes, byteorder='big')
+        xored = input_int ^ sea128_const
+        xored_bytes = xored.to_bytes(16, byteorder='big')
+        decryptor = cipher.decryptor()
+        final_bytes = decryptor.update(xored_bytes) + decryptor.finalize()
+        int_result = int.from_bytes(final_bytes, byteorder='big')
+
+    return {"output": tobase64b(int_result)}
+
+def xes(case):
+    arguments = case["arguments"]
+    mode = arguments["mode"]
+    key = arguments["key"]
+    tweak = arguments["tweak"]
+    input_data = arguments["input"]
+
+
 
 
 def main():
@@ -60,7 +81,10 @@ def main():
         "add_numbers": add_numbers,
         "subtract_numbers": subtract_numbers,
         "poly2block": poly2block,
-        "block2poly": block2poly2,
+        "block2poly": block2poly,
+        "gfmul": gfmul,
+        "sea128": sea128,
+        "xex": xes,
     }
 
     response = {}
@@ -72,7 +96,7 @@ def main():
         else:
             print(f"Warning: Unknown action '{action}' for testcase {id}")
 
-    print(json.dumps(response))
+    print(json.dumps(response, indent=2))
 
 
 if __name__ == "__main__":

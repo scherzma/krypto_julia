@@ -1,27 +1,27 @@
 {
   "testcases": {
-    "b856d760-023d-4b00-bad2-15d2b6da22fe": {
+    "add_numbers": {
       "action": "add_numbers",
       "arguments": {
         "number1": 123,
         "number2": 234
       }
     },
-    "254eaee7-05fd-4e0d-8292-9b658a852245": {
+    "add_numbers": {
       "action": "add_numbers",
       "arguments": {
         "number1": 333,
         "number2": 444
       }
     },
-    "affbf4fc-4d2a-41e3-afe0-a79e1d174781": {
+    "subtract_numbers": {
       "action": "subtract_numbers",
       "arguments": {
         "number1": 999,
         "number2": 121212
       }
     },
-    "apsweojawpriuqwpeoriqupweriou": {
+    "poly2block": {
       "action": "poly2block",
       "arguments": {
         "semantic": "xex",
@@ -33,11 +33,42 @@
         ]
       }
     },
-    "aaerpoiwtupadsfimbvadpsfoivjba": {
+    "block2poly2": {
       "action": "block2poly",
       "arguments": {
         "semantic": "xex",
         "block": "ARIAAAAAAAAAAAAAAAAAgA=="
+      }
+    },
+    "poly2block2": {
+      "action": "block2poly",
+      "arguments": {
+        "semantic": "xex",
+        "block": "hSQAAAAAAAAAAAAAAAAAAA=="
+      }
+    },
+    "gfmul": {
+      "action": "gfmul",
+      "arguments": {
+      "semantic": "xex",
+          "a": "ARIAAAAAAAAAAAAAAAAAgA==",
+          "b": "AgAAAAAAAAAAAAAAAAAAAA=="
+      }
+    },
+    "encryptSEA128": {
+      "action": "sea128",
+      "arguments": {
+        "mode": "encrypt",
+        "key": "istDASeincoolerKEYrofg==",
+        "input": "yv66vvrO263eyviIiDNEVQ=="
+      }
+    },
+    "decryptSEA128": {
+      "action": "sea128",
+      "arguments": {
+        "mode": "decrypt",
+        "key": "istDASeincoolerKEYrofg==",
+        "input": "D5FDo3iVBoBN9gVi9/MSKQ=="
       }
     }
   }
