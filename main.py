@@ -59,12 +59,96 @@ def sea128(case):
 
     return {"output": tobase64b(int_result)}
 
-def xes(case):
+
+def xex(case):
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
     arguments = case["arguments"]
     mode = arguments["mode"]
     key = arguments["key"]
     tweak = arguments["tweak"]
     input_data = arguments["input"]
+
+    key_bytes = base64.b64decode(key)
+    tweak_bytes = base64.b64decode(tweak)
+    input_bytes = base64.b64decode(input_data)
+
+    if len(key_bytes) != 32:
+        raise ValueError("Key must be 256 bits (32 bytes) for XEX.")
+
+    k1 = key_bytes[:16]
+    k2 = key_bytes[16:]
+
+    # Helper functions for SEA-128 encryption and decryption
+    def sea128_encrypt(key_bytes, input_bytes):
+        sea128_const = 0xc0ffeec0ffeec0ffeec0ffeec0ffee11
+        cipher = Cipher(algorithms.AES(key_bytes), modes.ECB())
+        encryptor = cipher.encryptor()
+        aes_result = encryptor.update(input_bytes) + encryptor.finalize()
+        aes_int = int.from_bytes(aes_result, byteorder='big')
+        int_result = aes_int ^ sea128_const
+        result_bytes = int_result.to_bytes(16, byteorder='big')
+        return result_bytes
+
+    def sea128_decrypt(key_bytes, input_bytes):
+        sea128_const = 0xc0ffeec0ffeec0ffeec0ffeec0ffee11
+        input_int = int.from_bytes(input_bytes, byteorder='big')
+        xored = input_int ^ sea128_const
+        xored_bytes = xored.to_bytes(16, byteorder='big')
+        cipher = Cipher(algorithms.AES(key_bytes), modes.ECB())
+        decryptor = cipher.decryptor()
+        final_bytes = decryptor.update(xored_bytes) + decryptor.finalize()
+        return final_bytes
+
+    # Compute L = E_k2(tweak)
+    L_bytes = sea128_encrypt(k2, tweak_bytes)
+    L_int = int.from_bytes(L_bytes, byteorder='big')
+
+    # Process input in blocks of 16 bytes
+    num_blocks = len(input_bytes) // 16
+    output_bytes = b''
+
+    modulus = 0x87  # x^7 + x^2 + x + 1
+
+    M_int = L_int
+    for i in range(num_blocks):
+        # Compute M_i
+        M_i_int = M_int
+
+        # Get the block
+        block = input_bytes[i*16:(i+1)*16]
+        block_int = int.from_bytes(block, byteorder='big')
+
+        # For encryption or decryption
+        if mode == "encrypt":
+            temp = block_int ^ M_i_int
+            # Encrypt with SEA-128 and k1
+            temp_bytes = temp.to_bytes(16, byteorder='big')
+            temp_encrypted_bytes = sea128_encrypt(k1, temp_bytes)
+            temp_encrypted_int = int.from_bytes(temp_encrypted_bytes, byteorder='big')
+            output_int = temp_encrypted_int ^ M_i_int
+        elif mode == "decrypt":
+            temp = block_int ^ M_i_int
+            # Decrypt with SEA-128 and k1
+            temp_bytes = temp.to_bytes(16, byteorder='big')
+            temp_decrypted_bytes = sea128_decrypt(k1, temp_bytes)
+            temp_decrypted_int = int.from_bytes(temp_decrypted_bytes, byteorder='big')
+            output_int = temp_decrypted_int ^ M_i_int
+        else:
+            raise ValueError("Invalid mode for xex.")
+
+        # Append output
+        output_bytes += output_int.to_bytes(16, byteorder='big')
+
+        # Update M_int for next block (multiply by alpha)
+        msb = (M_int >> 127) & 1
+        M_int = (M_int << 1) & ((1 << 128) - 1)
+        if msb:
+            M_int ^= modulus
+
+    # Encode output
+    output_base64 = base64.b64encode(output_bytes).decode('utf-8')
+
+    return {"output": output_base64}
 
 
 
@@ -84,7 +168,7 @@ def main():
         "block2poly": block2poly,
         "gfmul": gfmul,
         "sea128": sea128,
-        "xex": xes,
+        "xex": xex,
     }
 
     response = {}
