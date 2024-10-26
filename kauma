@@ -103,7 +103,6 @@ def xex(case):
     L_bytes = sea128_encrypt(k2, tweak_bytes)
     L_int = int.from_bytes(L_bytes, byteorder='big')
 
-    # Process input in blocks of 16 bytes
     num_blocks = len(input_bytes) // 16
     output_bytes = b''
 
