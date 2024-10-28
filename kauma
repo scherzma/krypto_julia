@@ -171,6 +171,7 @@ action_functions = {
 
 response = {}
 for id, testcase in data["testcases"].items():
+    print(id, testcase)
     action = testcase["action"]
     func = action_functions.get(action)
     if func:
@@ -178,6 +179,6 @@ for id, testcase in data["testcases"].items():
     else:
         print(f"Warning: Unknown action '{action}' for testcase {id}")
 
-print(json.dumps(response))
+print(json.dumps({"responses":response}))
 
 
