@@ -171,7 +171,6 @@ action_functions = {
 
 response = {}
 for id, testcase in data["testcases"].items():
-    print(id, testcase)
     action = testcase["action"]
     func = action_functions.get(action)
     if func:
