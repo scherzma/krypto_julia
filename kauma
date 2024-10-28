@@ -178,6 +178,6 @@ for id, testcase in data["testcases"].items():
     else:
         print(f"Warning: Unknown action '{action}' for testcase {id}")
 
-print(json.dumps(response, indent=2))
+print(json.dumps(response))
 
 
