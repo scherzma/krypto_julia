@@ -64,9 +64,9 @@ def xex(case):
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
     arguments = case["arguments"]
     mode = arguments["mode"]
-    key = arguments["key"]
-    tweak = arguments["tweak"]
-    input_data = arguments["input"]
+    key = arguments["key"].replace('\n', '').replace(' ', '')  # Remove any spaces or newlines
+    tweak = arguments["tweak"].replace('\n', '').replace(' ', '')
+    input_data = arguments["input"].replace('\n', '').replace(' ', '')
 
     key_bytes = base64.b64decode(key)
     tweak_bytes = base64.b64decode(tweak)
@@ -78,9 +78,10 @@ def xex(case):
     k1 = key_bytes[:16]
     k2 = key_bytes[16:]
 
-    # Helper functions for SEA-128 encryption and decryption
+    sea128_const = 0xc0ffeec0ffeec0ffeec0ffeec0ffee11
+
+    # SEA-128 encryption function matching the original implementation
     def sea128_encrypt(key_bytes, input_bytes):
-        sea128_const = 0xc0ffeec0ffeec0ffeec0ffeec0ffee11
         cipher = Cipher(algorithms.AES(key_bytes), modes.ECB())
         encryptor = cipher.encryptor()
         aes_result = encryptor.update(input_bytes) + encryptor.finalize()
@@ -89,8 +90,8 @@ def xex(case):
         result_bytes = int_result.to_bytes(16, byteorder='big')
         return result_bytes
 
+    # SEA-128 decryption function matching the original implementation
     def sea128_decrypt(key_bytes, input_bytes):
-        sea128_const = 0xc0ffeec0ffeec0ffeec0ffeec0ffee11
         input_int = int.from_bytes(input_bytes, byteorder='big')
         xored = input_int ^ sea128_const
         xored_bytes = xored.to_bytes(16, byteorder='big')
@@ -103,51 +104,56 @@ def xex(case):
     L_bytes = sea128_encrypt(k2, tweak_bytes)
     L_int = int.from_bytes(L_bytes, byteorder='big')
 
+    # Process input in blocks of 16 bytes
     num_blocks = len(input_bytes) // 16
     output_bytes = b''
 
-    modulus = 0x87  # x^7 + x^2 + x + 1
+    modulus = 0x87  # The modulus for GF(2^128)
 
-    M_int = L_int
+    M_int = L_int  # Initial mask M_0
+
+    # Function to multiply by α in GF(2^128)
+    def multiply_by_alpha(x):
+        msb = (x >> 127) & 1  # Get the MSB before shift
+        x = (x << 1) & ((1 << 128) - 1)  # Shift left and mask to 128 bits
+        if msb:
+            x ^= modulus  # XOR with modulus if MSB was 1
+        return x
+
     for i in range(num_blocks):
-        # Compute M_i
         M_i_int = M_int
 
-        # Get the block
+        # Get the current block
         block = input_bytes[i*16:(i+1)*16]
         block_int = int.from_bytes(block, byteorder='big')
 
-        # For encryption or decryption
         if mode == "encrypt":
             temp = block_int ^ M_i_int
-            # Encrypt with SEA-128 and k1
             temp_bytes = temp.to_bytes(16, byteorder='big')
             temp_encrypted_bytes = sea128_encrypt(k1, temp_bytes)
             temp_encrypted_int = int.from_bytes(temp_encrypted_bytes, byteorder='big')
-            output_int = temp_encrypted_int ^ M_i_int
+            output_block_int = temp_encrypted_int ^ M_i_int
         elif mode == "decrypt":
             temp = block_int ^ M_i_int
-            # Decrypt with SEA-128 and k1
             temp_bytes = temp.to_bytes(16, byteorder='big')
             temp_decrypted_bytes = sea128_decrypt(k1, temp_bytes)
             temp_decrypted_int = int.from_bytes(temp_decrypted_bytes, byteorder='big')
-            output_int = temp_decrypted_int ^ M_i_int
+            output_block_int = temp_decrypted_int ^ M_i_int
         else:
             raise ValueError("Invalid mode for xex.")
 
-        # Append output
-        output_bytes += output_int.to_bytes(16, byteorder='big')
+        # Append the output block
+        output_bytes += output_block_int.to_bytes(16, byteorder='big')
 
-        # Update M_int for next block (multiply by alpha)
-        M_int = (M_int << 1) & ((1 << 128) - 1)
-        msb = (M_int >> 127) & 1
-        if msb:
-            M_int ^= modulus
+        # Update M_int for the next block
+        M_int = multiply_by_alpha(M_int)
 
-    # Encode output
+    # Encode the output in base64
     output_base64 = base64.b64encode(output_bytes).decode('utf-8')
 
     return {"output": output_base64}
+
+
 
 
 
