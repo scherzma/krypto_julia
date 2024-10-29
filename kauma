@@ -90,7 +90,6 @@ def xex(case):
         result_bytes = int_result.to_bytes(16, byteorder='big')
         return result_bytes
 
-    # SEA-128 decryption function matching the original implementation
     def sea128_decrypt(key_bytes, input_bytes):
         input_int = int.from_bytes(input_bytes, byteorder='big')
         xored = input_int ^ sea128_const
