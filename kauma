@@ -139,8 +139,8 @@ def xex(case):
         output_bytes += output_int.to_bytes(16, byteorder='big')
 
         # Update M_int for next block (multiply by alpha)
-        msb = (M_int >> 127) & 1
         M_int = (M_int << 1) & ((1 << 128) - 1)
+        msb = (M_int >> 127) & 1
         if msb:
             M_int ^= modulus
 
