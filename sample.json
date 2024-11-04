@@ -33,6 +33,19 @@
         ]
       }
     },
+    "poly2blockAUFGABE": {
+      "action": "poly2block",
+      "arguments": {
+        "semantic": "xex",
+        "coefficients": [
+          8,
+          6,
+          5,
+          2,
+          0
+        ]
+      }
+    },
     "block2poly2": {
       "action": "block2poly",
       "arguments": {
