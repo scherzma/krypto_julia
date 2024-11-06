@@ -1,7 +1,5 @@
 import base64
-from ftplib import print_line
 from sys import byteorder
-
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from src.utils.conversion import tobase64b, reverse_endian
 from src.operations.galois import gfmul_int_xex, gfmul_int_gcm, gfmul_int_gcm_bytes
@@ -67,40 +65,36 @@ def xex(case: dict) -> dict:
 
 def encrypt_block(key: bytes, plaintext: bytes, algo: str) -> bytes:
     """Encrypt a single block using the specified algorithm."""
-    result = bytearray()
     if algo == "aes128":
         cipher = Cipher(algorithms.AES(key), modes.ECB())
         encryptor = cipher.encryptor()
-        result = encryptor.update(plaintext) + encryptor.finalize()
+        return encryptor.update(plaintext) + encryptor.finalize()
     elif algo == "sea128":
         temp = sea128_int("encrypt", key, plaintext)
-        result = temp.to_bytes(16, byteorder='big')
-    return result
+        return temp.to_bytes(16, byteorder='big')
 
-def ghash(ciphertext: bytes, auth_key: bytes, ass_data: bytes) -> (bytes, bytes):
+def ghash(text: bytes, auth_key: bytes, aad: bytes) -> (bytes, bytes):
+    aad_len = (len(aad) * 8).to_bytes(8, byteorder='big')
+    text_len = (len(text) * 8).to_bytes(8, byteorder='big')
+    L = aad_len + text_len
 
-    ass_data_len = len(ass_data) * 8
-    ciphertext_len = len(ciphertext) * 8
+    if len(aad) % 16 != 0:
+        aad = aad + b'\x00' * ((16 - len(aad) % 16) % 16)
+    if len(text) % 16 != 0:
+        text = text + b'\x00' * ((16 - len(text) % 16) % 16)
 
-    ass_data_len_bytes = ass_data_len.to_bytes(8, byteorder='big')
-    ciphertext_len_bytes = ciphertext_len.to_bytes(8, byteorder='big')
+    tag = bytearray(x ^ y for x, y in zip(b'\x00' * 16, aad))
+    tag = gfmul_int_gcm_bytes(auth_key, tag)
 
-    L = ass_data_len_bytes + ciphertext_len_bytes
-    ass_data = ass_data + b'\x00' * ((16 - len(ass_data) % 16) % 16)
-    ciphertext = ciphertext + b'\x00' * ((16 - len(ciphertext) % 16) % 16)
+    for i in range(len(text) // 16):
+        block = text[i * 16: (i + 1) * 16]
+        tag = bytearray(x ^ y for x, y in zip(tag, block))
+        tag = gfmul_int_gcm_bytes(auth_key, tag)
 
-    state = bytearray(x ^ y for x, y in zip(b'\x00'*16, ass_data))
-    state = gfmul_int_gcm_bytes(auth_key, state)
+    tag = bytearray(x ^ y for x, y in zip(tag, L))
+    tag = gfmul_int_gcm_bytes(auth_key, tag)
 
-    for i in range(len(ciphertext) // 16):
-        block = ciphertext[i*16: (i+1)*16]
-        state = bytearray(x ^ y for x, y in zip(state, block))
-        state = gfmul_int_gcm_bytes(auth_key, state)
-
-    state = bytearray(x ^ y for x, y in zip(state, L))
-    state = gfmul_int_gcm_bytes(auth_key, state)
-
-    return (state, L)
+    return (tag, L)
 
 def gcm_encrypt_int(key: bytes, nonce: bytes, plaintext: bytes, ad: bytes, algo: str) -> (bytes, bytes, bytes, bytes):
     """
@@ -113,7 +107,7 @@ def gcm_encrypt_int(key: bytes, nonce: bytes, plaintext: bytes, ad: bytes, algo:
 
     counter = 2
     ciphertext = bytearray()
-    for i in range(len(plaintext) // 16):
+    for i in range(len(plaintext) + 15 // 16):
         plaintext_block = plaintext[i*16: (i+1)*16]
         Yi = nonce + counter.to_bytes(4, byteorder='big')
         xor = encrypt_block(key, Yi, algo)
@@ -124,14 +118,6 @@ def gcm_encrypt_int(key: bytes, nonce: bytes, plaintext: bytes, ad: bytes, algo:
     auth_tag = bytearray(x ^ y for x, y in zip(auth_tag, B0))
 
     return (ciphertext, auth_tag, L, H)
-
-
-def gcm_decrypt_int(key: bytes, nonce: bytes, ciphertext: bytes, ad: bytes, tag: bytes, algo: str) -> (bool, bytes):
-    """Perform GCM decryption using AES-128 algorithm."""
-    cipher = Cipher(algorithms.AES(key), modes.GCM(nonce))
-    decryptor = cipher.decryptor()
-    plaintext = decryptor.update(ciphertext) + decryptor.finalize()
-    return plaintext
 
 
 
@@ -165,9 +151,29 @@ def gcm_decrypt(case: dict) -> dict:
     ad = case["arguments"]["ad"]
     tag = case["arguments"]["tag"]
 
-    if algorithm == "aes128":
-        result = gcm_decrypt_int(key, nonce, ciphertext, ad, 'aes128')
-        return {"plaintext": result[0], "tag": result[1], "L": result[2], "H": result[3]}
-    elif algorithm == "sea128":
-        result = gcm_decrypt_int(key, nonce, ciphertext, ad, tag, 'sea128')
-        return {"plaintext": result[0], "tag": result[1], "L": result[2], "H": result[3]}
+    nonce = base64.b64decode(nonce)
+    key = base64.b64decode(key)
+    ciphertext = base64.b64decode(ciphertext)
+    ad = base64.b64decode(ad)
+    tag = base64.b64decode(tag)
+
+    result = gcm_encrypt_int(key, nonce, ciphertext, ad, algorithm)
+
+
+    auth_key = encrypt_block(key, b'\x00' * 16, algorithm)
+    res = ghash(ciphertext, auth_key, ad)
+
+    B0 = encrypt_block(key, nonce + b'\x00\x00\x00\x01', algorithm)
+
+    auth_tag = res[0]
+    auth_tag = bytearray(x ^ y for x, y in zip(auth_tag, B0))
+
+    print("my tag ", auth_tag.hex())
+    print("tag    ", tag.hex())
+
+    plaintext = result[0]
+
+    return {
+        "authentic": auth_tag == tag,
+        "plaintext": base64.b64encode(plaintext).decode('utf-8'),
+    }

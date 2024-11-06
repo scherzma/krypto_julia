@@ -60,7 +60,7 @@
         ]
       }
     },
-    "poly2block3GCM": {
+    "poly2block4GCMasd": {
       "action": "poly2block",
       "arguments": {
         "semantic": "gcm",
@@ -69,7 +69,7 @@
         ]
       }
     },
-    "poly2block3GCM": {
+    "poly2block54257GCM": {
       "action": "poly2block",
       "arguments": {
         "semantic": "gcm",
@@ -128,6 +128,17 @@
           "a": "ARIAAAAAAAAAAAAAAAAAgA==",
           "b": "AgAAAAAAAAAAAAAAAAAAAA=="
       }
+    },
+    "gcm_decrypt_sdxea1281": {
+        "action": "gcm_decrypt",
+        "arguments": {
+          "algorithm": "sea128",
+          "nonce": "VOkKCCnH4EYE1z4L",
+          "key": "ByMrTiLP7isfBDL7vsKkOQ==",
+          "ciphertext": "UdpDzPAafM+y",
+          "ad": "UknNF3AKBaF/8GUnFUw=",
+          "tag": "sN0+1fG+WSOHMswF7IBnZA=="
+        }
     },
     "gfmul2gcm": {
       "action": "gfmul",
@@ -190,6 +201,17 @@
         "plaintext": "RGFzIGlzdCBlaW4gVGVzdA==",
         "ad": "QUQtRGF0ZW4="
         }
+    },
+    "gcm_decrypt_aes128": {
+      "action": "gcm_decrypt",
+      "arguments": {
+        "algorithm": "aes128",
+        "nonce": "SwVYf3IJ2p/VTiyz",
+        "key": "bYfxz4zIS8NGWT55xSGy7Q==",
+        "ciphertext": "ltCrCEYjUCHd",
+        "ad": "w8pc8/yCt2zxERPVcsnOMx8/HmrfAfGUQtD+vyMMpJ5lrF2S",
+        "tag": "d4Z2uVRSmpVE1TEa/Zhx9A=="
+      }
     }
   }
 }

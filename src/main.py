@@ -45,7 +45,8 @@ def main():
 
     # Debug configuration - set to None to disable
     DEBUG_VIEW_TESTS = [
-        #"gcm_encrypt"
+        "gcm_decrypt_aes128",
+        "gcm_encrypt",
         #"gcm_encrypt_sea128"
     ]
 
@@ -57,6 +58,18 @@ def main():
         if len(sys.argv) > 2 and sys.argv[2] == "--view" and len(sys.argv) > 3:
             view_test = sys.argv[3]
             is_test_mode = True
+
+    # Initialize test tracker early to ensure it's available for all testing scenarios
+    tracker = TestResultTracker() if is_test_mode else None
+
+    # Handle view test request first
+    if view_test:
+        if tracker:
+            tracker.print_test_history(view_test)
+            return
+        else:
+            print("Error: Test tracking is not enabled")
+            return
 
     # Map actions to their corresponding functions
     action_functions = {
@@ -71,15 +84,6 @@ def main():
         "gcm_decrypt": gcm_decrypt,
     }
 
-    if is_test_mode:
-        # Initialize test tracker
-        tracker = TestResultTracker()
-
-        # If viewing a specific test from command line
-        if view_test:
-            tracker.print_test_history(view_test)
-            return
-
     # Load and process test cases
     data = load_testcases(file)
     response = {}
@@ -92,23 +96,22 @@ def main():
         else:
             print(f"Warning: Unknown action '{action}' for testcase {id}")
 
-    if is_test_mode:
+    if is_test_mode and tracker:
         # Show test results
         changes = tracker.compare_results(response)
         tracker.print_changes(changes)
         tracker.save_run(response, file)
 
-        # Debug: View specific test results if configured
+        # Debug: View specific test results if configured and tests exist
         if DEBUG_VIEW_TESTS:
             print("\n🔍 Debug Views:")
             for test_id in DEBUG_VIEW_TESTS:
                 print(f"\n{'=' * 50}")
-                tracker.print_test_history(test_id)
+                tracker.print_test_history(test_id, 1)
     else:
         # Original behavior - just output JSON
         print(json.dumps({"responses": response}, indent=1))
 
 
 if __name__ == "__main__":
-
     main()
