@@ -41,23 +41,19 @@ class PaddingOracleServer:
 
     def handle_client(self, client_socket):
         """Handle a single client connection."""
-        print(f"Client connected: {client_socket.getpeername()}")
         try:
             # Step 1: Receive initial 16 bytes ciphertext
             self.ciphertext = client_socket.recv(16)
             if len(self.ciphertext) != 16:
                 return
-            print(f"Received ciphertext: {self.ciphertext}")
 
             while True:
                 # Step 2: Receive 2-byte length field
                 length_bytes = client_socket.recv(2)
                 if len(length_bytes) != 2:
                     return
-                print(f"Received length: {length_bytes}")
 
                 length = struct.unpack('<H', length_bytes)[0]  # little endian
-                print(f"Length: {length}")
 
                 # Check for termination
                 if length == 0:
@@ -86,7 +82,7 @@ class PaddingOracleServer:
 
                 # Step 4: Send response
                 client_socket.send(response)
-                print(f"Sent response: {response}")
+                # print(f"Sent response: {response}")
 
         except Exception as e:
             print(f"Error handling client: {e}")

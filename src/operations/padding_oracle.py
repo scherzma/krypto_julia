@@ -1,13 +1,15 @@
 import socket
 import base64
 import struct
-from typing import List, Optional
+from typing import List
+
 
 def connect_to_oracle(hostname: str, port: int) -> socket.socket:
     """Establish connection to the padding oracle server."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.connect((hostname, port))
     return sock
+
 
 def send_q_blocks(sock: socket.socket, q_blocks: List[bytes]) -> List[bool]:
     """
@@ -24,6 +26,7 @@ def send_q_blocks(sock: socket.socket, q_blocks: List[bytes]) -> List[bool]:
     # Receive responses (1 byte per block)
     responses = sock.recv(len(q_blocks))
     return [b == 1 for b in responses]
+
 
 def find_byte(sock: socket.socket, known_bytes: bytes, byte_position: int, block_size: int = 16) -> int:
     """
@@ -54,8 +57,25 @@ def find_byte(sock: socket.socket, known_bytes: bytes, byte_position: int, block
             if is_valid:
                 guess_value = batch_start + i
 
-                # For non-last byte positions, verify to avoid false positives
-                if byte_position > 0:
+                # For the last byte (byte_position == 15), we need special handling
+                # because we might have found a valid 0x01 padding
+                if byte_position == 15:
+                    # Try to verify by setting the second-to-last byte to a different value
+                    verify_q = bytearray(base_q)
+                    verify_q.append(guess_value)
+                    verify_q[-2] ^= 1  # Modify second-to-last byte
+                    verify_responses = send_q_blocks(sock, [bytes(verify_q)])
+
+                    if verify_responses[0]:
+                        # If it's still valid, this is a 0x02 0x02 padding
+                        # Keep searching for 0x01 padding
+                        continue
+
+                    # This is our 0x01 padding
+                    return guess_value ^ 1  # XOR with padding value 1
+
+                # For all other positions, we need to verify it's not a false positive
+                elif byte_position > 0:
                     verify_q = bytearray(base_q)
                     verify_q.append(guess_value)
                     verify_q[-2] ^= 1  # Modify second-to-last byte
@@ -64,10 +84,11 @@ def find_byte(sock: socket.socket, known_bytes: bytes, byte_position: int, block
                     if not verify_responses[0]:  # Valid padding confirmed
                         return guess_value ^ padding_value
                 else:
-                    # For last byte, we accept the first valid padding
+                    # For subsequent bytes after the last one, we trust the padding
                     return guess_value ^ padding_value
 
     raise Exception(f"Could not find byte at position {byte_position}")
+
 
 def decrypt_block(sock: socket.socket) -> bytes:
     """Decrypt a single block of ciphertext."""
@@ -81,26 +102,6 @@ def decrypt_block(sock: socket.socket) -> bytes:
 
     return bytes(plaintext)
 
-def decrypt_blocks_parallel(sock: socket.socket, blocks: List[bytes], iv: bytes) -> bytes:
-    """
-    Decrypt multiple blocks in parallel where possible.
-    Returns the complete decrypted plaintext.
-    """
-    plaintext = bytearray()
-    prev_block = iv
-
-    for block in blocks:
-        # Send the current ciphertext block to the server
-        sock.send(block)
-
-        # Decrypt the block
-        decrypted = decrypt_block(sock)
-
-        # XOR with previous ciphertext block to get plaintext
-        plaintext.extend(bytes(a ^ b for a, b in zip(prev_block, decrypted)))
-        prev_block = block
-
-    return bytes(plaintext)
 
 def padding_oracle(case: dict) -> dict:
     """
@@ -115,17 +116,29 @@ def padding_oracle(case: dict) -> dict:
     ciphertext = base64.b64decode(case["arguments"]["ciphertext"])
 
     # Split ciphertext into blocks
-    blocks = [ciphertext[i:i+16] for i in range(0, len(ciphertext), 16)]
+    blocks = [ciphertext[i:i + 16] for i in range(0, len(ciphertext), 16)]
 
     # Connect to oracle server
     sock = connect_to_oracle(hostname, port)
+    plaintext = bytearray()
 
     try:
-        # Decrypt all blocks
-        plaintext = decrypt_blocks_parallel(sock, blocks, iv)
+        prev_block = iv
+
+        # Process each ciphertext block
+        for block in blocks:
+            # Send the current ciphertext block to the server
+            sock.send(block)
+
+            # Decrypt the block
+            decrypted = decrypt_block(sock)
+
+            # XOR with previous ciphertext block to get plaintext
+            plaintext.extend(bytes(a ^ b for a, b in zip(prev_block, decrypted)))
+            prev_block = block
 
         return {
-            "plaintext": base64.b64encode(plaintext).decode('utf-8')
+            "plaintext": base64.b64encode(bytes(plaintext)).decode('utf-8')
         }
 
     finally:
