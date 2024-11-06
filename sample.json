@@ -7,7 +7,7 @@
         "number2": 234
       }
     },
-    "add_numbers": {
+    "add_numbers2": {
       "action": "add_numbers",
       "arguments": {
         "number1": 333,
@@ -51,6 +51,33 @@
         ]
       }
     },
+    "poly2block3GCM": {
+      "action": "poly2block",
+      "arguments": {
+        "semantic": "gcm",
+        "coefficients": [
+          101, 91
+        ]
+      }
+    },
+    "poly2block3GCM": {
+      "action": "poly2block",
+      "arguments": {
+        "semantic": "gcm",
+        "coefficients": [
+          64, 2
+        ]
+      }
+    },
+    "poly2block3GCM": {
+      "action": "poly2block",
+      "arguments": {
+        "semantic": "gcm",
+        "coefficients": [
+          128, 7, 2, 1, 0
+        ]
+      }
+    },
     "block2poly2": {
       "action": "block2poly",
       "arguments": {
@@ -79,12 +106,35 @@
         "block": "hSQAAAAAAAAAAAAAAAAAAA=="
       }
     },
+    "poly2block5GCM": {
+      "action": "block2poly",
+      "arguments": {
+        "semantic": "gcm",
+        "block": "AAABxQgAAAAAAAQQAAAAAA=="
+      }
+    },
     "gfmul": {
       "action": "gfmul",
       "arguments": {
       "semantic": "xex",
           "a": "ARIAAAAAAAAAAAAAAAAAgA==",
           "b": "AgAAAAAAAAAAAAAAAAAAAA=="
+      }
+    },
+    "gfmul1gcm": {
+      "action": "gfmul",
+      "arguments": {
+      "semantic": "gcm",
+          "a": "ARIAAAAAAAAAAAAAAAAAgA==",
+          "b": "AgAAAAAAAAAAAAAAAAAAAA=="
+      }
+    },
+    "gfmul2gcm": {
+      "action": "gfmul",
+      "arguments": {
+      "semantic": "gcm",
+          "a": "AAAAAAAAAAAAAAAQBAAAAA==",
+          "b": "IAAAAAAAAACAAAAAAAAAAA=="
       }
     },
     "encryptSEA128": {
