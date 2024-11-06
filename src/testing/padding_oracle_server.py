@@ -54,6 +54,7 @@ class PaddingOracleServer:
                     return
 
                 length = struct.unpack('<H', length_bytes)[0]  # little endian
+                # print(f"Received length: {length}")
 
                 # Check for termination
                 if length == 0:
@@ -100,7 +101,6 @@ class PaddingOracleServer:
 
             while True:
                 client_socket, addr = server_socket.accept()
-                print(f"Accepted connection from {addr}")
                 self.handle_client(client_socket)
 
         except KeyboardInterrupt:

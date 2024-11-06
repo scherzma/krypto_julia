@@ -3,6 +3,8 @@ import os
 import socket
 import threading
 import time
+import random
+
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 from src.testing.padding_oracle_server import PaddingOracleServer
@@ -76,6 +78,7 @@ def generate_test_suite():
     test_cases = []
     base_port = 18652
 
+    x = 1
     # Test case 1: Simple ASCII message
     test_cases.append({
         "name": "simple_ascii",
@@ -87,22 +90,44 @@ def generate_test_suite():
     test_cases.append({
         "name": "multiple_blocks",
         "plaintext": b"This is a longer message that will span multiple blocks in the encryption.",
-        "port": base_port + 1
+        "port": base_port + x
     })
+
+    x += 1
 
     # Test case 3: Special characters
     test_cases.append({
         "name": "special_chars",
         "plaintext": b"Special chars: !@#$%^&*()",
-        "port": base_port + 2
+        "port": base_port + x
     })
 
+    x += 1
+
     # Test case 4: Binary data
+    for j in range(4):
+        test_cases.append({
+            "name": "binary_data" + str(j),
+            "plaintext": bytes([i % 256 for i in range(32)]),
+            "port": base_port + x
+        })
+        x += 1
+
+    for j in range(5):
+        test_cases.append({
+            "name": "binary_data_random" + str(j),
+            "plaintext": bytes([i % 256 for i in range(random.randint(1, 32))]),
+            "port": base_port + x
+        })
+        x += 1
+
+    # Test case 5: Padding oracle attack
     test_cases.append({
-        "name": "binary_data",
-        "plaintext": bytes([i % 256 for i in range(32)]),
-        "port": base_port + 3
+        "name": "padding_oracle",
+        "plaintext": b"aeg4923gja34g8jadf8adfb80a7fg",
+        "port": base_port + x
     })
+    x += 1
 
     # Generate complete test cases
     return {case["name"]: create_test_case(case["plaintext"], case["port"])
