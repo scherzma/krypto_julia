@@ -157,6 +157,7 @@ def run_tests(test_cases: dict):
 
     for name, test_case in test_cases.items():
         print(f"\nRunning test: {name}")
+        print(f"  test_case: {test_case}")
 
         # Start server with the test case's key
         key = base64.b64decode(test_case["expected"]["key"])

@@ -1,3 +1,5 @@
+# File: src/testing/padding_oracle_server.py
+
 import socket
 import sys
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -48,7 +50,8 @@ class PaddingOracleServer:
                 if len(length_bytes) != 2:
                     return
 
-                length = struct.unpack('<H', length_bytes)[0]  # little endian
+                # Change endianness to big-endian
+                length = struct.unpack('>H', length_bytes)[0]  # big endian
                 # print(f"Received length: {length}")
 
                 # Check for termination
@@ -109,7 +112,7 @@ class PaddingOracleServer:
 if __name__ == "__main__":
     # Example usage with random key
     if len(sys.argv) != 2:
-        print("Usage: python server.py <base64_key>")
+        print("Usage: python padding_oracle_server.py <base64_key>")
         sys.exit(1)
 
     key = sys.argv[1]
