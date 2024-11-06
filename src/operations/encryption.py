@@ -59,3 +59,51 @@ def xex(case: dict) -> dict:
     input_bytes = base64.b64decode(args["input"])
     result = fde_xex(key_bytes, tweak_bytes, input_bytes, args["mode"])
     return {"output": base64.b64encode(result).decode('utf-8')}
+
+
+def gcm_encrypt_int(key: bytes, nonce: bytes, ciphertext: bytes, ad: bytes, algo: str) -> (bytes, bytes, bytes, bytes):
+    """Perform GCM decryption using AES-128 algorithm."""
+    cipher = Cipher(algorithms.AES(key), modes.GCM(nonce), backend=default_backend())
+    decryptor = cipher.decryptor()
+    plaintext = decryptor.update(ciphertext) + decryptor.finalize()
+    return plaintext
+
+def gcm_decrypt_int(key: bytes, nonce: bytes, ciphertext: bytes, ad: bytes, tag: bytes, algo: str) -> (bool, bytes):
+    """Perform GCM decryption using AES-128 algorithm."""
+    cipher = Cipher(algorithms.AES(key), modes.GCM(nonce), backend=default_backend())
+    decryptor = cipher.decryptor()
+    plaintext = decryptor.update(ciphertext) + decryptor.finalize()
+    return plaintext
+
+
+
+def gcm_encrypt(case: dict) -> dict:
+    """Wrapper function for GCM encryption operation."""
+    algorithm = case["arguments"]["algorithm"]
+    nonce = case["arguments"]["nonce"]
+    key = case["arguments"]["key"]
+    plaintext = case["arguments"]["plaintext"]
+    ad = case["arguments"]["ad"]
+
+    if algorithm == "aes128":
+        result = gcm_encrypt_int(key, nonce, plaintext, ad, 'aes128')
+        return {"ciphertext": result[0], "tag": result[1], "L": result[2], "H": result[3]}
+    elif algorithm == "sea128":
+        result = gcm_encrypt_int(key, nonce, plaintext, ad, 'sea128')
+        return {"ciphertext": result[0], "tag": result[1], "L": result[2], "H": result[3]}
+
+def gcm_decrypt(case: dict) -> dict:
+    """Wrapper function for GCM decryption operation."""
+    algorithm = case["arguments"]["algorithm"]
+    nonce = case["arguments"]["nonce"]
+    key = case["arguments"]["key"]
+    ciphertext = case["arguments"]["ciphertext"]
+    ad = case["arguments"]["ad"]
+    tag = case["arguments"]["tag"]
+
+    if algorithm == "aes128":
+        result = gcm_decrypt_int(key, nonce, ciphertext, ad, 'aes128')
+        return {"plaintext": result[0], "tag": result[1], "L": result[2], "H": result[3]}
+    elif algorithm == "sea128":
+        result = gcm_decrypt_int(key, nonce, ciphertext, ad, tag, 'sea128')
+        return {"plaintext": result[0], "tag": result[1], "L": result[2], "H": result[3]}
