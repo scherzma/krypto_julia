@@ -4,6 +4,7 @@ import base64
 import socket
 import struct
 from typing import Dict, Any
+from cryptography.hazmat.primitives import padding
 
 def padding_oracle(case: Dict[str, Any]) -> Dict[str, Any]:
     hostname = case["arguments"]["hostname"]
@@ -31,6 +32,16 @@ def padding_oracle(case: Dict[str, Any]) -> Dict[str, Any]:
         plaintext_blocks.append(P_b)
 
     plaintext = b''.join(plaintext_blocks)
+
+    # Remove PKCS#7 padding
+    try:
+        unpadder = padding.PKCS7(128).unpadder()
+        plaintext = unpadder.update(plaintext)
+        plaintext += unpadder.finalize()
+    except ValueError:
+        # Padding is incorrect, return as is
+        pass
+
     plaintext_base64 = base64.b64encode(plaintext).decode('utf-8')
     return {"plaintext": plaintext_base64}
 
