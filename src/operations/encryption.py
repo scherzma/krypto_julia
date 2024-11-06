@@ -73,51 +73,65 @@ def encrypt_block(key: bytes, plaintext: bytes, algo: str) -> bytes:
         temp = sea128_int("encrypt", key, plaintext)
         return temp.to_bytes(16, byteorder='big')
 
+
 def ghash(text: bytes, auth_key: bytes, aad: bytes) -> (bytes, bytes):
-    aad_len = (len(aad) * 8).to_bytes(8, byteorder='big')
-    text_len = (len(text) * 8).to_bytes(8, byteorder='big')
-    L = aad_len + text_len
+    """
+    Compute GHASH function.
+    Returns both the hash result and the length block.
+    """
+    # Create length block
+    aad_bits = (len(aad) * 8).to_bytes(8, byteorder='big')
+    text_bits = (len(text) * 8).to_bytes(8, byteorder='big')
+    len_block = aad_bits + text_bits
 
-    if len(aad) % 16 != 0:
-        aad = aad + b'\x00' * ((16 - len(aad) % 16) % 16)
-    if len(text) % 16 != 0:
-        text = text + b'\x00' * ((16 - len(text) % 16) % 16)
+    # Pad AAD to block size if needed
+    padded_aad = aad + b'\x00' * ((16 - len(aad) % 16) % 16)
 
-    tag = bytearray(x ^ y for x, y in zip(b'\x00' * 16, aad))
-    tag = gfmul_int_gcm_bytes(auth_key, tag)
+    # Pad text to block size if needed
+    padded_text = text + b'\x00' * ((16 - len(text) % 16) % 16)
 
-    for i in range(len(text) // 16):
-        block = text[i * 16: (i + 1) * 16]
-        tag = bytearray(x ^ y for x, y in zip(tag, block))
-        tag = gfmul_int_gcm_bytes(auth_key, tag)
+    # Initialize hash value
+    Y = bytearray(16)  # Zero block
 
-    tag = bytearray(x ^ y for x, y in zip(tag, L))
-    tag = gfmul_int_gcm_bytes(auth_key, tag)
+    # Process AAD
+    for i in range(0, len(padded_aad), 16):
+        block = padded_aad[i:i + 16]
+        Y = bytearray(x ^ y for x, y in zip(Y, block))
+        Y = gfmul_int_gcm_bytes(auth_key, Y)
 
-    return (tag, L)
+    # Process ciphertext/plaintext
+    for i in range(0, len(padded_text), 16):
+        block = padded_text[i:i + 16]
+        Y = bytearray(x ^ y for x, y in zip(Y, block))
+        Y = gfmul_int_gcm_bytes(auth_key, Y)
 
-def gcm_encrypt_int(key: bytes, nonce: bytes, plaintext: bytes, ad: bytes, algo: str) -> (bytes, bytes, bytes, bytes):
+    # Process length block
+    Y = bytearray(x ^ y for x, y in zip(Y, len_block))
+    Y = gfmul_int_gcm_bytes(auth_key, Y)
+
+    return (Y, len_block)
+
+def gcm_crypt(key: bytes, nonce: bytes, text: bytes, ad: bytes, algo: str) -> (bytes, bytes, bytes, bytes):
     """
     Perform GCM decryption using specified algorithm.
     The Nonce is 96 Bit Long.
     """
-
-    H = encrypt_block(key, b'\x00' * 16, algo)
-    B0 = encrypt_block(key, nonce + b'\x00\x00\x00\x01', algo)
+    auth_key = encrypt_block(key, b'\x00' * 16, algo)
+    block_one = encrypt_block(key, nonce + b'\x00\x00\x00\x01', algo)
 
     counter = 2
-    ciphertext = bytearray()
-    for i in range(len(plaintext) + 15 // 16):
-        plaintext_block = plaintext[i*16: (i+1)*16]
+    result_text = bytearray()
+    for i in range(len(text) + 15 // 16):
+        plaintext_block = text[i * 16: (i + 1) * 16]
         Yi = nonce + counter.to_bytes(4, byteorder='big')
         xor = encrypt_block(key, Yi, algo)
-        ciphertext += bytearray(x ^ y for x, y in zip(plaintext_block, xor))
+        result_text += bytearray(x ^ y for x, y in zip(plaintext_block, xor))
         counter += 1
 
-    auth_tag, L = ghash(ciphertext, H, ad)
-    auth_tag = bytearray(x ^ y for x, y in zip(auth_tag, B0))
+    auth_tag, L = ghash(result_text, auth_key, ad)
+    auth_tag = bytearray(x ^ y for x, y in zip(auth_tag, block_one))
 
-    return (ciphertext, auth_tag, L, H)
+    return (result_text, auth_tag, L, auth_key)
 
 
 
@@ -134,7 +148,7 @@ def gcm_encrypt(case: dict) -> dict:
     plaintext = base64.b64decode(plaintext)
     ad = base64.b64decode(ad)
 
-    result = gcm_encrypt_int(key, nonce, plaintext, ad, algorithm)
+    result = gcm_crypt(key, nonce, plaintext, ad, algorithm)
     return {
             "ciphertext": base64.b64encode(result[0]).decode('utf-8'),
             "tag": base64.b64encode(result[1]).decode('utf-8'),
@@ -157,7 +171,7 @@ def gcm_decrypt(case: dict) -> dict:
     ad = base64.b64decode(ad)
     tag = base64.b64decode(tag)
 
-    result = gcm_encrypt_int(key, nonce, ciphertext, ad, algorithm)
+    result = gcm_crypt(key, nonce, ciphertext, ad, algorithm)
 
 
     auth_key = encrypt_block(key, b'\x00' * 16, algorithm)
@@ -167,9 +181,6 @@ def gcm_decrypt(case: dict) -> dict:
 
     auth_tag = res[0]
     auth_tag = bytearray(x ^ y for x, y in zip(auth_tag, B0))
-
-    print("my tag ", auth_tag.hex())
-    print("tag    ", tag.hex())
 
     plaintext = result[0]
 
