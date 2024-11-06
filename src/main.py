@@ -85,7 +85,7 @@ def main():
         "xex": xex,
         "gcm_encrypt": gcm_encrypt,
         "gcm_decrypt": gcm_decrypt,
-        "padding_oracle": padding_oracle, # padding_oracle,
+        "padding_oracle": padding_oracle_chaggpt # padding_oracle,
     }
 
     # Load and process test cases

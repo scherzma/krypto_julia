@@ -79,12 +79,29 @@ def generate_test_suite():
     base_port = 18652
 
     x = 1
+
+    test_cases.append({
+        "name": str(x),
+        "plaintext": base64.b64decode("AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8="),
+        "port": base_port + x
+    })
+    x += 1
+
+    test_cases.append({
+        "name": str(x),
+        "plaintext": base64.b64decode("CSnvU7FHnSeheBxw9L7D/VP/nnX6vuylh+z0iEmhqI2K7kehy0PKhZO20ffYrkbEz+akrgGIBzPdwTBMcndMBXmN02dQUNgyhgrWSjhj+r5DS/zX7Mr1XiIuPQoufCxl"),
+        "port": base_port + x
+    })
+
+    x += 1
+
     # Test case 1: Simple ASCII message
     test_cases.append({
         "name": "simple_ascii",
         "plaintext": b"Hello, World!",
-        "port": base_port
+        "port": base_port + x
     })
+    x += 1
 
     # Test case 2: Multiple blocks
     test_cases.append({

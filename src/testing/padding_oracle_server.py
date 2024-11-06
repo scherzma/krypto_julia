@@ -17,18 +17,13 @@ class PaddingOracleServer:
 
     def check_padding(self, q_block: bytes) -> bool:
         """
-        Check if the padding is valid for a given Q block combined with stored ciphertext.
+        Check if the padding is valid for a given q_block used as IV.
         """
         try:
-            # Create AES cipher in CBC mode with zero IV
-            cipher = Cipher(algorithms.AES(self.key), modes.CBC(bytes(16)))
+            # Decrypt using q_block as IV
+            cipher = Cipher(algorithms.AES(self.key), modes.CBC(q_block))
             decryptor = cipher.decryptor()
-
-            # Decrypt the data
             decrypted = decryptor.update(self.ciphertext) + decryptor.finalize()
-
-            # XOR with Q block
-            decrypted = bytes(a ^ b for a, b in zip(decrypted, q_block))
 
             # Check PKCS7 padding
             unpadder = padding.PKCS7(128).unpadder()
@@ -82,7 +77,7 @@ class PaddingOracleServer:
                     response.append(0x01 if is_valid else 0x00)
 
                 # Step 4: Send response
-                client_socket.send(response)
+                client_socket.sendall(response)
                 # print(f"Sent response: {response}")
 
         except Exception as e:
