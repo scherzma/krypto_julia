@@ -10,9 +10,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 def poly2block(case):
     if case["arguments"]["semantic"] == "xex":
-        res = coefficients2numberXEX(case["arguments"]["coefficients"])
-        res_bytes = res.to_bytes(16, byteorder='little')
-        return {"block": base64.b64encode(res_bytes).decode('utf-8')}
+        return {"block": tobase64l(coefficients2numberXEX(case["arguments"]["coefficients"]))}
     elif case["arguments"]["semantic"] == "gcm":
         res = coefficients2numberGCM(case["arguments"]["coefficients"])
         res_bytes = res.to_bytes(16, byteorder='big')
