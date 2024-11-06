@@ -212,6 +212,15 @@
         "ad": "w8pc8/yCt2zxERPVcsnOMx8/HmrfAfGUQtD+vyMMpJ5lrF2S",
         "tag": "d4Z2uVRSmpVE1TEa/Zhx9A=="
       }
+    },
+    "padding_oracle": {
+      "action": "padding_oracle",
+      "arguments": {
+        "hostname": "localhost",
+        "port": 18652,
+        "iv": "dxTwbO/hhIeycOTbTnp8QQ==",
+        "ciphertext": "e+Sn+nG28niB8Df++hmjFRTcti07wHsrivmoxnDDBaELOfLS16p/pqvAuz01UPq7"
+      }
     }
   }
 }
