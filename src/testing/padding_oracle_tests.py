@@ -105,18 +105,18 @@ def generate_test_suite():
     x += 1
 
     # Test case 4: Binary data
-    for j in range(4):
+    for j in range(10):
         test_cases.append({
             "name": "binary_data" + str(j),
-            "plaintext": bytes([i % 256 for i in range(32)]),
+            "plaintext": bytes([i % 256 for i in range(80)]),
             "port": base_port + x
         })
         x += 1
 
-    for j in range(5):
+    for j in range(50):
         test_cases.append({
             "name": "binary_data_random" + str(j),
-            "plaintext": bytes([i % 256 for i in range(random.randint(1, 32))]),
+            "plaintext": bytes([i % 256 for i in range(random.randint(0, 33))]),
             "port": base_port + x
         })
         x += 1
