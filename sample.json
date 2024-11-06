@@ -33,6 +33,15 @@
         ]
       }
     },
+    "poly2blockGCM": {
+      "action": "poly2block",
+      "arguments": {
+        "semantic": "gcm",
+        "coefficients": [
+          0, 1, 2, 3, 4, 5, 6, 7, 15, 16
+        ]
+      }
+    },
     "block2poly2": {
       "action": "block2poly",
       "arguments": {
@@ -44,6 +53,20 @@
       "action": "block2poly",
       "arguments": {
         "semantic": "xex",
+        "block": "hSQAAAAAAAAAAAAAAAAAAA=="
+      }
+    },
+    "block2poly3GCM": {
+      "action": "block2poly",
+      "arguments": {
+        "semantic": "gcm",
+        "block": "ARIAAAAAAAAAAAAAAAAAgA=="
+      }
+    },
+    "poly2block4GCM": {
+      "action": "block2poly",
+      "arguments": {
+        "semantic": "gcm",
         "block": "hSQAAAAAAAAAAAAAAAAAAA=="
       }
     },

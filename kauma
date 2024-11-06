@@ -9,16 +9,38 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 
 def poly2block(case):
-    res = coefficients2number(case["arguments"]["coefficients"])
-    res_bytes = res.to_bytes(16, byteorder='little')
-    return {"block": base64.b64encode(res_bytes).decode('utf-8')}
-
+    if case["arguments"]["semantic"] == "xex":
+        res = coefficients2numberXEX(case["arguments"]["coefficients"])
+        res_bytes = res.to_bytes(16, byteorder='little')
+        return {"block": base64.b64encode(res_bytes).decode('utf-8')}
+    elif case["arguments"]["semantic"] == "gcm":
+        res = coefficients2numberGCM(case["arguments"]["coefficients"])
+        res_bytes = res.to_bytes(16, byteorder='big')
+        return {"block": base64.b64encode(res_bytes).decode('utf-8')}
 
 def block2poly(case):
-    return {"coefficients": number2coefficients(frombase64(case["arguments"]["block"]))}
+    if case["arguments"]["semantic"] == "xex":
+        return {"coefficients": number2coefficientsXEX(frombase64(case["arguments"]["block"]))}
+    elif case["arguments"]["semantic"] == "gcm":
+        number = reverse_endian(frombase64(case["arguments"]["block"]))
+        return {"coefficients": number2coefficientsGCM(number)}
 
-coefficients2number = lambda coefficients: sum(1 << i for i in coefficients)
-number2coefficients = lambda number: [i for i in range(number.bit_length()) if number & (1 << i)]
+
+def coefficients2numberGCM(coefficients):
+    res = 0
+    for coefficient in coefficients:
+        res |= 1 << 127 - coefficient
+    return res
+
+def number2coefficientsGCM(number):
+    coefficients = []
+    for i in range(number.bit_length()):
+        if number & 1 << i:
+            coefficients.append(127 - i)
+    return coefficients
+
+coefficients2numberXEX = lambda coefficients: sum(1 << i for i in coefficients)
+number2coefficientsXEX = lambda number: [i for i in range(number.bit_length()) if number & (1 << i)]
 add_numbers = lambda case: {"sum": case["arguments"]["number1"] + case["arguments"]["number2"]}
 subtract_numbers = lambda case: {"difference": case["arguments"]["number1"] - case["arguments"]["number2"]}
 frombase64 = lambda s: int.from_bytes(base64.b64decode(s), byteorder='little')
