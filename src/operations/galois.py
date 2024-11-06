@@ -9,6 +9,12 @@ def gfmul_int_xex(a: int, b: int, modulus: int = 0x10000000000000000000000000000
                  range(res.bit_length()-1, 127, -1), res)
 
 
+def gfmul_int_gcm_bytes(a: bytes, b: bytes, modulus: int = 0x100000000000000000000000000000087) -> bytes:
+    a_int = int.from_bytes(a, byteorder='big')
+    b_int = int.from_bytes(b, byteorder='big')
+    return int.to_bytes(gfmul_int_gcm(a_int, b_int, modulus), 16, byteorder='big')
+
+
 def gfmul_int_gcm(a: int, b: int, modulus: int = 0x100000000000000000000000000000087) -> int:
     """Perform Galois field multiplication using GCM semantics."""
     a_r = reverse_bits(a)

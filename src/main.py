@@ -4,7 +4,7 @@ from typing import Dict, Any
 from src.operations.arithmetic import add_numbers, subtract_numbers
 from src.operations.polynomial import poly2block, block2poly
 from src.operations.galois import gfmul
-from src.operations.encryption import sea128, xex
+from src.operations.encryption import sea128, xex, gcm_encrypt, gcm_decrypt
 from src.testing.TestResultTracker import TestResultTracker
 
 
@@ -45,8 +45,8 @@ def main():
 
     # Debug configuration - set to None to disable
     DEBUG_VIEW_TESTS = [
-        #"gfmul1gcm",
-        #"gfmul2gcm",
+        #"gcm_encrypt"
+        #"gcm_encrypt_sea128"
     ]
 
     # Parse command line arguments
@@ -67,6 +67,8 @@ def main():
         "gfmul": gfmul,
         "sea128": sea128,
         "xex": xex,
+        "gcm_encrypt": gcm_encrypt,
+        "gcm_decrypt": gcm_decrypt,
     }
 
     if is_test_mode:
@@ -108,4 +110,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     main()
