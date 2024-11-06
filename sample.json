@@ -42,6 +42,15 @@
         ]
       }
     },
+    "poly2block2GCM": {
+      "action": "poly2block",
+      "arguments": {
+        "semantic": "gcm",
+        "coefficients": [
+          0, 1, 2, 3, 127, 126
+        ]
+      }
+    },
     "block2poly2": {
       "action": "block2poly",
       "arguments": {

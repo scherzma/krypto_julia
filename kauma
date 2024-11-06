@@ -10,35 +10,47 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 def poly2block(case):
     if case["arguments"]["semantic"] == "xex":
-        return {"block": tobase64l(coefficients2numberXEX(case["arguments"]["coefficients"]))}
+        return {"block": tobase64l(c_to_n_xex(case["arguments"]["coefficients"]))}
     elif case["arguments"]["semantic"] == "gcm":
-        res = coefficients2numberGCM(case["arguments"]["coefficients"])
+        res = c_to_n_gcm(case["arguments"]["coefficients"])
         res_bytes = res.to_bytes(16, byteorder='big')
         return {"block": base64.b64encode(res_bytes).decode('utf-8')}
 
 def block2poly(case):
     if case["arguments"]["semantic"] == "xex":
-        return {"coefficients": number2coefficientsXEX(frombase64(case["arguments"]["block"]))}
+        return {"coefficients": n_to_c_xex(frombase64(case["arguments"]["block"]))}
     elif case["arguments"]["semantic"] == "gcm":
         number = reverse_endian(frombase64(case["arguments"]["block"]))
-        return {"coefficients": number2coefficientsGCM(number)}
+        return {"coefficients": n_to_c_gcm(number)}
 
 
-def coefficients2numberGCM(coefficients):
+
+
+def c_to_n_gcm(coefficients):
     res = 0
     for coefficient in coefficients:
         res |= 1 << 127 - coefficient
     return res
 
-def number2coefficientsGCM(number):
+def n_to_c_gcm(number):
     coefficients = []
     for i in range(number.bit_length()):
         if number & 1 << i:
             coefficients.append(127 - i)
+    coefficients.sort()
     return coefficients
 
-coefficients2numberXEX = lambda coefficients: sum(1 << i for i in coefficients)
-number2coefficientsXEX = lambda number: [i for i in range(number.bit_length()) if number & (1 << i)]
+# coeffs = [0, 1, 2, 3, 4, 5, 6, 7, 15, 16]
+# num = c_to_n_gcm(coeffs)
+# print(num)
+# print(coeffs)
+#
+# coeffs_converted = n_to_c_gcm(num)
+# print(coeffs_converted)
+
+
+c_to_n_xex = lambda coefficients: sum(1 << i for i in coefficients)
+n_to_c_xex = lambda number: [i for i in range(number.bit_length()) if number & (1 << i)]
 add_numbers = lambda case: {"sum": case["arguments"]["number1"] + case["arguments"]["number2"]}
 subtract_numbers = lambda case: {"difference": case["arguments"]["number1"] - case["arguments"]["number2"]}
 frombase64 = lambda s: int.from_bytes(base64.b64decode(s), byteorder='little')
@@ -51,13 +63,20 @@ def gfmul_int(a, b, modulus=0x100000000000000000000000000000087):
     res = reduce(lambda x,i: x ^ ((a << i) if b & (1 << i) else 0), range(b.bit_length()), 0)
     return reduce(lambda x,i: x ^ ((modulus << (i - 128)) if x & (1 << i) else 0), range(res.bit_length()-1, 127, -1), res)
 
+def gfmul_int_xex(a, b, modulus=0x100000000000000000000000000000087):
+    res = reduce(lambda x,i: x ^ ((a << i) if b & (1 << i) else 0), range(b.bit_length()), 0)
+    return reduce(lambda x,i: x ^ ((modulus << (i - 128)) if x & (1 << i) else 0), range(res.bit_length()-1, 127, -1), res)
+
 def gfmul(case, modulus=0x100000000000000000000000000000087):
-    a, b = frombase64(case["arguments"]["a"]), frombase64(case["arguments"]["b"])
-    return {"product": tobase64l(gfmul_int(a, b, modulus))}
+    if case["arguments"]["semantic"] == "xex":
+        a, b = frombase64(case["arguments"]["a"]), frombase64(case["arguments"]["b"])
+        return {"product": tobase64l(gfmul_int(a, b, modulus))}
+    elif case["arguments"]["semantic"] == "gcm":
+        a, b = frombase64(case["arguments"]["a"]), frombase64(case["arguments"]["b"])
+        return {"product": tobase64b(gfmul_int_xex(a, b, modulus))}
 
 def sea128_int(mode, key_bytes, input_bytes):
     sea128_const = 0xc0ffeec0ffeec0ffeec0ffeec0ffee11
-
 
     cipher = Cipher(algorithms.AES(key_bytes), modes.ECB())
 
