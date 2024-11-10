@@ -20,6 +20,7 @@ def padding_oracle(case: Dict[str, Any]) -> Dict[str, Any]:
         Cb = blocks[b]
         # Establish a new connection per block
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             sock.connect((hostname, port))
             sock.settimeout(5)
             # Send initial ciphertext (16 bytes)
@@ -60,12 +61,13 @@ def attack_block(sock):
             Q_blocks.append(bytes(Q))
 
         # Send all Q_blocks in one batch
-        length_bytes = struct.pack('>H', len(Q_blocks))
+        length_bytes = struct.pack('<H', len(Q_blocks))
         sock.sendall(length_bytes)
         sock.sendall(b''.join(Q_blocks))
 
         # Receive responses
         responses = recv_all(sock, len(Q_blocks))
+        #print(f"Received responses: {responses}")
         # Process responses
         for idx, response_byte in enumerate(responses):
             if response_byte == 1:
@@ -75,6 +77,10 @@ def attack_block(sock):
                 break
 
         if not found:
+            print(" s        : ", s)
+            print(f" Padding  : {padding_length}")
+            print(f" Q blocks: {Q_blocks}")
+            print(f" Responses: {responses}")
             raise Exception(f"Padding oracle attack failed at byte {i}")
     Dk_Cb = bytes(s)
     return Dk_Cb

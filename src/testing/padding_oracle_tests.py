@@ -82,6 +82,14 @@ def generate_test_suite():
 
     test_cases.append({
         "name": str(x),
+        "plaintext": base64.b64decode(
+            "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8="),
+        "port": base_port + x
+    })
+    x += 1
+
+    test_cases.append({
+        "name": str(x),
         "plaintext": base64.b64decode("AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk8="),
         "port": base_port + x
     })

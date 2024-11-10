@@ -1,5 +1,5 @@
 from functools import reduce
-from src.utils.conversion import frombase64, tobase64l, tobase64b, reverse_bits, reverse_endian
+from src.utils.conversion import frombase64, tobase64l, tobase64b, reverse_bits, reverse_endian, frombase64b
 from src.operations.polynomial import num_to_coef_gcm
 
 def gfmul_int_xex(a: int, b: int, modulus: int = 0x100000000000000000000000000000087) -> int:
@@ -30,6 +30,6 @@ def gfmul(case: dict, modulus: int = 0x100000000000000000000000000000087) -> dic
         a, b = frombase64(case["arguments"]["a"]), frombase64(case["arguments"]["b"])
         return {"product": tobase64l(gfmul_int_xex(a, b, modulus))}
     elif case["arguments"]["semantic"] == "gcm":
-        a = reverse_endian(frombase64(case["arguments"]["a"]))
-        b = reverse_endian(frombase64(case["arguments"]["b"]))
+        a = frombase64b(case["arguments"]["a"])
+        b = frombase64b(case["arguments"]["b"])
         return {"product": tobase64b(gfmul_int_gcm(a, b, modulus))}

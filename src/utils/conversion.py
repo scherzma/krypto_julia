@@ -4,6 +4,10 @@ def frombase64(s: str) -> int:
     """Convert base64 string to integer using little-endian."""
     return int.from_bytes(base64.b64decode(s), byteorder='little')
 
+def frombase64b(s: str) -> int:
+    """Convert base64 string to integer using big-endian."""
+    return int.from_bytes(base64.b64decode(s), byteorder='big')
+
 def tobase64l(number: int) -> str:
     """Convert integer to base64 string using little-endian."""
     return base64.b64encode(number.to_bytes(16, byteorder='little')).decode('utf-8')

@@ -51,7 +51,7 @@ class PaddingOracleServer:
                     return
 
                 # Change endianness to big-endian
-                length = struct.unpack('>H', length_bytes)[0]  # big endian
+                length = struct.unpack('<H', length_bytes)[0]  # big endian
                 # print(f"Received length: {length}")
 
                 # Check for termination
