@@ -26,7 +26,13 @@ def padding_oracle(case: Dict[str, Any]) -> Dict[str, Any]:
             # Send initial ciphertext (16 bytes)
             sock.sendall(Cb)
             # Perform the attack on the current block
-            Dk_Cb = attack_block(sock)
+            try:
+                Dk_Cb = attack_block(sock)
+            except Exception as e:
+                print(f"IV {iv.hex()}")
+                print(f"Block {b}: {Cb.hex()}")
+                print(f"Error in block {b}: {e}")
+                continue
         # Recover plaintext block
         P_b = bytes(x ^ y for x, y in zip(Dk_Cb, Cb_prev))
         plaintext_blocks.append(P_b)
