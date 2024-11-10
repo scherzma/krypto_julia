@@ -79,7 +79,7 @@ def attack_block(sock):
         if not found:
             print(" s        : ", s)
             print(f" Padding  : {padding_length}")
-            print(f" Q blocks: {Q_blocks}")
+            # print(f" Q blocks: {Q_blocks}")
             print(f" Responses: {responses}")
             raise Exception(f"Padding oracle attack failed at byte {i}")
     Dk_Cb = bytes(s)
