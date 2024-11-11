@@ -1,0 +1,23 @@
+#!/usr/bin/env julia
+
+module Kauma
+using JSON
+include("processor.jl")
+
+
+function main()
+    file::String = "./sample.json"
+
+    if length(ARGS) == 1
+        file = ARGS[1]
+    end
+    
+    jsonContent = JSON.parsefile(file)
+    process(jsonContent)
+end
+
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end
+
+end
