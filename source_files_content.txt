@@ -1,4 +1,53 @@
+Directory Structure:
+===================
 
+📁 Krypto/
+    📄 kauma
+    📄 processor.jl (Content follows below)
+    📄 sample.json
+    📄 script.py
+
+
+File Contents:
+=============
+
+
+===========================================
+File: kauma
+===========================================
+
+#!/usr/bin/env julia
+
+module Kauma
+using JSON
+include("processor.jl")
+using .Processing: process
+
+function main()
+    file::String = "./sample.json"
+
+    if length(ARGS) == 1
+        file = ARGS[1]
+    end
+    
+    jsonContent = JSON.parsefile(file)
+    process(jsonContent)
+end
+
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end
+
+end
+
+===========================================
+File: processor.jl
+===========================================
+
+
+
+module Processing
+using JSON
 
 function process(jsonContent::Dict)
 
@@ -38,11 +87,11 @@ end
 
 
 function add_numbers(jsonContent::Dict)
-    return 4
+    return jsonContent["number1"] + jsonContent["number2"]
 end
 
 function subtract_numbers(jsonContent::Dict)
-    return 6
+    return jsonContent["number1"] - jsonContent["number2"]
 end
 
 function poly2block(jsonContent::Dict)
@@ -91,4 +140,5 @@ function padding_oracle_chaggpt(jsonContent::Dict)
     println("padding_oracle_chaggpt")
     println("jsonContent: ", jsonContent)
     return "plaintext"
+end
 end

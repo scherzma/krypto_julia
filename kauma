@@ -2,8 +2,8 @@
 
 module Kauma
 using JSON
-include("processor.jl")
-
+include("src/util/processor.jl")
+using .Processing: process
 
 function main()
     file::String = "./sample.json"
