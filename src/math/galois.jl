@@ -1,6 +1,7 @@
 
 module Galois
 using Nemo
+using Base64
 
 struct FieldElement
     value::ZZRingElem
@@ -8,31 +9,28 @@ struct FieldElement
 end
 
 FieldElement(value::Int) = FieldElement(value, ZZ(0x100000000000000000000000000000087))
+FieldElement(value::UInt128) = FieldElement(ZZ(value), ZZ(0x100000000000000000000000000000087))
 FieldElement(value::ZZRingElem) = FieldElement(value, ZZ(0x100000000000000000000000000000087))
 
 function FieldElement(value::Array{UInt8}, semantic::String)
+    aggregate = ZZ(0)
+    one = ZZ(1)
     if semantic == "xex"
-        aggregate = 0
-        one = ZZ(1)
-
         for i in value
-            aggregate += one << (136 - 2 * i % 8)
+            if i < 128
+                aggregate |= one << (120 + i&0b0000_0111 -i&0b1111_1000)
+            end
         end
-
-        FieldElement(aggregate)
     elseif semantic == "gcm"
-        aggregate = 0
-        one = ZZ(1)
-
         for i in value
-            aggregate += one << 127 - i
+            if i < 128
+                aggregate |= one << (127 - i)
+            end
         end
-
-        FieldElement(aggregate)
     else
         throw(ArgumentError("Unknown semantic"))
     end
-
+    FieldElement(aggregate)
 end
 
 import Base.:+
@@ -66,22 +64,42 @@ function block(a::FieldElement, semantic::String)
     end
 end
 
+function bit_string(a::FieldElement)
+    return join(reverse(digits(a.value, base=2, pad=128))) # return join(reverse([(a.value >> i) % 2 == 1 ? 1 : 0 for i in 1:nbits(a.value)]))
+end
+
+
+function to_block(a::FieldElement, semantic::String)
+    # Calculate number of bytes needed
+    value = a.value
+    bit_size = nbits(value)
+    num_bytes = ceil(Int, bit_size / 8)
+    
+    bytes = Vector{UInt8}(undef, num_bytes)
+    
+    mask = ZZ(0xFF)
+    for i in 0:(num_bytes-1)
+        shift = i * 8
+        byte_val = Int((value >> shift) & mask)
+        bytes[num_bytes - i] = UInt8(byte_val)
+    end
+    
+    return base64encode(bytes)
+end
+
+
+
 import Base: getproperty
 function getproperty(gf::FieldElement, sym::Symbol)
     if sym === :block
         return (semantic::String) -> block(gf, semantic)
     end
+    if sym === :bit_string
+        return () -> bit_string(gf)
+    end
+    if sym === :to_block
+        return (semantic::String) -> to_block(gf, semantic)
+    end
     return getfield(gf, sym)
 end
-
-
-
-gf1 = FieldElement(2, 15)
-gf2 = FieldElement(3, 15)
-println(gf1 + gf2)
-
-poly::Array{UInt8} = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
-
-gf3 = FieldElement(poly, "gcm")
-println(gf3.block("xex"))
 end

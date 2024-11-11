@@ -2,6 +2,8 @@
 
 module Processing
 using JSON
+include("../math/galois.jl")
+using .Galois: FieldElement, galois_to_base64_alt
 
 function add_numbers(jsonContent::Dict)
     return jsonContent["number1"] + jsonContent["number2"]
@@ -12,21 +14,26 @@ function subtract_numbers(jsonContent::Dict)
 end
 
 function poly2block(jsonContent::Dict)
-    println("poly2block")
-    println("jsonContent: ", jsonContent)
-    return "block"
+    coefficients::Array{UInt8} = jsonContent["coefficients"]
+    semantic::String = jsonContent["semantic"]
+    gf = FieldElement(coefficients, semantic)
+    return gf.to_block(semantic)
 end
 
 function block2poly(jsonContent::Dict)
-    println("block2poly")
-    println("jsonContent: ", jsonContent)
-    return "polynomial"
+    semantic::String = jsonContent["semantic"]
+    block::String = jsonContent["block"]
+    gf = FieldElement(base64decode(block), semantic)
+    return gf.to_polynomial()
 end
 
 function gfmul(jsonContent::Dict)
-    println("gfmul")
-    println("jsonContent: ", jsonContent)
-    return "polynomial"
+    semantic::String = jsonContent["semantic"]
+    a::String = jsonContent["a"]
+    b::String = jsonContent["b"]
+    gf_a = FieldElement(base64decode(a), semantic)
+    gf_b = FieldElement(base64decode(b), semantic)
+    return (gf_a * gf_b).to_block(semantic)
 end
 
 function sea128(jsonContent::Dict)
@@ -63,7 +70,7 @@ end
 ACTIONS::Dict{String, Vector{Any}} = Dict(
     "add_numbers" => [add_numbers, ["sum"]],
     "subtract_numbers" => [subtract_numbers, ["difference"]],
-    "poly2block" => [poly2block, ["polynomial"]],
+    "poly2block" => [poly2block, ["block"]],
     "block2poly" => [block2poly, ["polynomial"]],
     "gfmul" => [gfmul, ["polynomial"]],
     "sea128" => [sea128, ["ciphertext"]],
@@ -90,13 +97,17 @@ function process(jsonContent::Dict)
         json_result = Dict()
 
         for (i, key) in enumerate(output_key)
-            json_result[key] = result[i]
+            if isa(result, String)
+                json_result[key] = result
+            else
+                json_result[key] = result[i]
+            end
         end
 
         result_testcases[key] = json_result
     end
 
-    println(JSON.json(result_testcases))
+    println(JSON.json(result_testcases, 1))
 
 end
 end

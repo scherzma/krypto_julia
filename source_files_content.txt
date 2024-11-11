@@ -2,8 +2,14 @@ Directory Structure:
 ===================
 
 📁 Krypto/
+    📁 src/
+        📁 math/
+            📄 galois.jl (Content follows below)
+        📁 util/
+            📄 processor.jl (Content follows below)
     📄 kauma
-    📄 processor.jl (Content follows below)
+    📄 Manifest.toml
+    📄 Project.toml
     📄 sample.json
     📄 script.py
 
@@ -20,7 +26,7 @@ File: kauma
 
 module Kauma
 using JSON
-include("processor.jl")
+include("src/util/processor.jl")
 using .Processing: process
 
 function main()
@@ -41,50 +47,99 @@ end
 end
 
 ===========================================
-File: processor.jl
+File: src\math\galois.jl
+===========================================
+
+
+module Galois
+using Nemo
+
+struct FieldElement
+    value::ZZRingElem
+    field::ZZRingElem
+end
+
+FieldElement(value::Int) = FieldElement(value, ZZ(0x100000000000000000000000000000087))
+FieldElement(value::ZZRingElem) = FieldElement(value, ZZ(0x100000000000000000000000000000087))
+
+function FieldElement(value::Array{UInt8}, semantic::String)
+    aggregate = ZZ(0)
+    one = ZZ(1)
+    if semantic == "xex"
+        for i in value
+            if i < 128
+                aggregate |= one << (120 + i&0b0000_0111 -i&0b1111_1000)
+            end
+        end
+    elseif semantic == "gcm"
+        for i in value
+            if i < 128
+                aggregate |= one << (127 - i)
+            end
+        end
+    else
+        throw(ArgumentError("Unknown semantic"))
+    end
+    FieldElement(aggregate)
+end
+
+import Base.:+
+function Base.:+(a::FieldElement, b::FieldElement)
+    if a.field != b.field
+        throw(ArgumentError("Cannot add elements from different fields"))
+    end
+    return FieldElement(a.value ^ b.value, a.field)
+end
+
+import Base.:*
+function Base.:*(a::FieldElement, b::FieldElement)
+    if a.field != b.field
+        throw(ArgumentError("Cannot multiply elements from different fields"))
+    end
+    return FieldElement(a.value ^ b.value, a.field)
+end
+
+import Base.show
+function Base.show(io::IO, a::FieldElement)
+    print(io, "FieldElement($(a.value), $(a.field))")
+end
+
+function block(a::FieldElement, semantic::String)
+    if semantic == "xex"
+        return a.value >> 136
+    elseif semantic == "gcm"
+        return a.value >> 127
+    else
+        throw(ArgumentError("Unknown semantic"))
+    end
+end
+
+function bit_string(a::FieldElement)
+    return join(reverse(digits(a.value, base=2, pad=128))) # return join(reverse([(a.value >> i) % 2 == 1 ? 1 : 0 for i in 1:nbits(a.value)]))
+end
+
+import Base: getproperty
+function getproperty(gf::FieldElement, sym::Symbol)
+    if sym === :block
+        return (semantic::String) -> block(gf, semantic)
+    end
+    if sym === :bit_string
+        return () -> bit_string(gf)
+    end
+    return getfield(gf, sym)
+end
+end
+
+===========================================
+File: src\util\processor.jl
 ===========================================
 
 
 
 module Processing
 using JSON
-
-function process(jsonContent::Dict)
-
-    actions::Dict{String, Vector{Any}} = Dict(
-        "add_numbers" => [add_numbers, ["sum"]],
-        "subtract_numbers" => [subtract_numbers, ["difference"]],
-        "poly2block" => [poly2block, ["polynomial"]],
-        "block2poly" => [block2poly, ["polynomial"]],
-        "gfmul" => [gfmul, ["polynomial"]],
-        "sea128" => [sea128, ["ciphertext"]],
-        "xex" => [xex, ["ciphertext"]],
-        "gcm_encrypt" => [gcm_encrypt, ["ciphertext", "asdf", "H", "MAC"]],
-        "gcm_decrypt" => [gcm_decrypt, ["plaintext"]],
-        "padding_oracle" => [padding_oracle_chaggpt, ["plaintext"]],
-    )
-
-    result_testcases = Dict()
-
-    for (key, value) in jsonContent["testcases"]
-        action = value["action"]
-        arguments = value["arguments"]
-        output_key = actions[action][2]
-
-        result = actions[action][1](arguments)
-        json_result = Dict()
-
-        for (i, key) in enumerate(output_key)
-            json_result[key] = result[i]
-        end
-
-        result_testcases[key] = json_result
-    end
-
-    println(JSON.json(result_testcases))
-
-end
-
+include("../math/galois.jl")
+using .Galois: FieldElement
 
 function add_numbers(jsonContent::Dict)
     return jsonContent["number1"] + jsonContent["number2"]
@@ -95,9 +150,12 @@ function subtract_numbers(jsonContent::Dict)
 end
 
 function poly2block(jsonContent::Dict)
-    println("poly2block")
-    println("jsonContent: ", jsonContent)
-    return "block"
+    println("poly2block: ", jsonContent)
+    coefficients::Array{UInt8} = jsonContent["coefficients"]
+    semantic::String = jsonContent["semantic"]
+    gf = FieldElement(coefficients, semantic)
+    println("GF Value: XXXXXXXXXXXXXXXX ", gf.value)
+    return gf.bit_string()
 end
 
 function block2poly(jsonContent::Dict)
@@ -140,5 +198,46 @@ function padding_oracle_chaggpt(jsonContent::Dict)
     println("padding_oracle_chaggpt")
     println("jsonContent: ", jsonContent)
     return "plaintext"
+end
+
+
+ACTIONS::Dict{String, Vector{Any}} = Dict(
+    "add_numbers" => [add_numbers, ["sum"]],
+    "subtract_numbers" => [subtract_numbers, ["difference"]],
+    "poly2block" => [poly2block, ["polynomial"]],
+    "block2poly" => [block2poly, ["polynomial"]],
+    "gfmul" => [gfmul, ["polynomial"]],
+    "sea128" => [sea128, ["ciphertext"]],
+    "xex" => [xex, ["ciphertext"]],
+    "gcm_encrypt" => [gcm_encrypt, ["ciphertext", "asdf", "H", "MAC"]],
+    "gcm_decrypt" => [gcm_decrypt, ["plaintext"]],
+    "padding_oracle" => [padding_oracle_chaggpt, ["plaintext"]],
+)
+
+function process(jsonContent::Dict)
+
+    result_testcases = Dict()
+
+    for (key, value) in jsonContent["testcases"]
+        action = value["action"]
+        arguments = value["arguments"]
+        output_key = ACTIONS[action][2]
+
+        if !haskey(ACTIONS, action)
+            throw(ProcessingError("Unknown action: $action"))
+        end
+
+        result = ACTIONS[action][1](arguments)
+        json_result = Dict()
+
+        for (i, key) in enumerate(output_key)
+            json_result[key] = result[i]
+        end
+
+        result_testcases[key] = json_result
+    end
+
+    println(JSON.json(result_testcases))
+
 end
 end
