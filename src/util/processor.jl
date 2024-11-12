@@ -6,9 +6,11 @@ using Base64
 include("../math/galois.jl")
 include("conversions.jl")
 include("../algorithms/sea128.jl")
+include("../algorithms/xex_fde.jl")
 using .Galois: FieldElement
 using .Conversions: base64_to_Nemo
 using .Sea128: encrypt_sea, decrypt_sea
+using .FDE: encrypt_fde, decrypt_fde
 
 
 function add_numbers(jsonContent::Dict)
@@ -66,9 +68,22 @@ function sea128(jsonContent::Dict)
 end
 
 function xex(jsonContent::Dict)
-    println("xex")
-    println("jsonContent: ", jsonContent)
-    return "ciphertext"
+    mode::String = jsonContent["mode"]
+    key::String = jsonContent["key"]
+    tweak::String = jsonContent["tweak"]
+    input::String = jsonContent["input"]
+
+    key_bytes = base64decode(key)
+    tweak_bytes = base64decode(tweak)
+    input_bytes = base64decode(input)
+
+    if mode == "encrypt"
+        result_bytes = encrypt_fde(key_bytes, tweak_bytes, input_bytes)
+    elseif mode == "decrypt"
+        result_bytes = decrypt_fde(key_bytes, tweak_bytes, input_bytes)
+    end
+
+    return base64encode(result_bytes)
 end
 
 function gcm_encrypt(jsonContent::Dict)
