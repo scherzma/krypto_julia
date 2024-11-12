@@ -125,29 +125,34 @@ function Base.:*(a::FieldElement, b::FieldElement)
         throw(ArgumentError("Cannot multiply elements from different fields"))
     end
 
-    aggregate = FieldElement(0, a.field)
+    aggregate = ZZRingElem(0)
 
-    if (b.value) % 2 == 1
-        aggregate ⊻= a
+    tmp_a = a.value
+    tmp_b = b.value
+
+    highest_field_bit = ZZRingElem(1) << (nbits(a.field) - 1)
+
+
+    if (tmp_b) % 2 == 1
+        aggregate ⊻= tmp_a
     end
 
     for i in 1:length(b)
-        a <<= 1
-        a ⊻= a.field
+        tmp_a <<= 1
         
-        if (b.value >> i) % 2 == 1
-            aggregate ⊻= a
+        if (tmp_a & highest_field_bit) != 0
+            tmp_a ⊻= a.field
+        end
+        
+        if (tmp_b >> i) % 2 == 1
+            aggregate ⊻= tmp_a
         end
 
     end
     
-    return aggregate
+    return FieldElement(aggregate, a.field)
 end
 
-a = FieldElement(0b11000100, 0b101001101)
-b = FieldElement(0b10000101, 0b101001101)
-c = a * b
-println(c)
 
 import Base.show
 function Base.show(io::IO, a::FieldElement)
@@ -157,7 +162,6 @@ end
 function bit_string(a::FieldElement)
     return join(reverse(digits(a.value, base=2, pad=128))) # return join(reverse([(a.value >> i) % 2 == 1 ? 1 : 0 for i in 1:nbits(a.value)]))
 end
-
 
 function to_polynomial(a::FieldElement, semantic::String)
     result = Vector{UInt8}(undef, 0)
@@ -218,7 +222,32 @@ function getproperty(gf::FieldElement, sym::Symbol)
     end
     return getfield(gf, sym)
 end
+
+
+#a = FieldElement(0b11000100, 0b100000000000000000000)
+#b = FieldElement(0b00000010, 0b100000000000000000000)
+#c = a * b
+#println(c)
+#println(c.bit_string())
+
+# 1422689339238542770217355994206306432
+# 2658455991569831745807614120560689152
+
+a = FieldElement(ZZRingElem(1422689339238542770217355994206306432)) # GF:340282366920938463463374607431768211591
+b = FieldElement(ZZRingElem(2658455991569831745807614120560689152))
+println(a)
+println(b)
+c = a * b    # 176974246126301064890833436885137752064
+println(c)   # 10000101001001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+println(c.bit_string())
+
+
+
 end
+
+
+
+
 
 ===========================================
 File: src\util\conversions.jl
@@ -230,22 +259,26 @@ module Conversions
 using Nemo
 using Base64
 
-function base64_to_Nemo(base64::String)
+function base64_to_Nemo(base64::String, semantic::String)
 
     result::ZZRingElem = 0
     a_array = base64decode(base64)
 
-    println("a_array: ", a_array)
-
-
-    for byte in a_array
-        result = result << 8  # Shift left by 8 bits
-        result = result | ZZ(byte)  # OR with current byte
+    if semantic == "xex"
+        reverse!(a_array)
+        for byte in a_array
+            result = result << 8  # Shift left by 8 bits
+            result = result | ZZ(byte)  # OR with current byte
+        end
+    elseif semantic == "gcm"
+        for byte in a_array
+            result = result << 8  # Shift left by 8 bits
+            result = result | ZZ(byte)  # OR with current byte
+        end
     end
 
     return result
 end
-
 
 end
 
@@ -287,7 +320,7 @@ function block2poly(jsonContent::Dict)
 
 
 
-    gf = FieldElement(base64_to_Nemo(block))
+    gf = FieldElement(base64_to_Nemo(block, semantic))
 
     result = gf.to_polynomial(semantic)
     println("Result: ", [Int(b) for b in result])
@@ -299,15 +332,17 @@ function gfmul(jsonContent::Dict)
     a::String = jsonContent["a"]
     b::String = jsonContent["b"]
 
-    a_ZZ = base64_to_Nemo(a)
-    b_ZZ = base64_to_Nemo(b)
+    a_ZZ = base64_to_Nemo(a, semantic)
+    b_ZZ = base64_to_Nemo(b, semantic)
 
     println("a_ZZ: ", a_ZZ)
     println("b_ZZ: ", b_ZZ)
 
     gf_a = FieldElement(a_ZZ)
     gf_b = FieldElement(b_ZZ)
-    return (gf_a * gf_b).to_block(semantic)
+
+    product = gf_a * gf_b
+    return (product).to_block(semantic)
 end
 
 function sea128(jsonContent::Dict)

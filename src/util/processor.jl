@@ -20,22 +20,16 @@ function poly2block(jsonContent::Dict)
     coefficients::Array{UInt8} = jsonContent["coefficients"]
     semantic::String = jsonContent["semantic"]
     gf = FieldElement(coefficients, semantic)
-    return gf.to_block(semantic)
+    return gf.to_block()
 end
 
 function block2poly(jsonContent::Dict)
     semantic::String = jsonContent["semantic"]
     block::String = jsonContent["block"]
 
-    println("Block: ", block)
-    println("Semantic: ", semantic)
+    gf = FieldElement(block, semantic)
 
-
-
-    gf = FieldElement(base64_to_Nemo(block, semantic))
-
-    result = gf.to_polynomial(semantic)
-    println("Result: ", [Int(b) for b in result])
+    result = gf.to_polynomial()
     return result
 end
 
@@ -44,17 +38,11 @@ function gfmul(jsonContent::Dict)
     a::String = jsonContent["a"]
     b::String = jsonContent["b"]
 
-    a_ZZ = base64_to_Nemo(a, semantic)
-    b_ZZ = base64_to_Nemo(b, semantic)
-
-    println("a_ZZ: ", a_ZZ)
-    println("b_ZZ: ", b_ZZ)
-
-    gf_a = FieldElement(a_ZZ)
-    gf_b = FieldElement(b_ZZ)
+    gf_a = FieldElement(a, semantic)
+    gf_b = FieldElement(b, semantic)
 
     product = gf_a * gf_b
-    return (product).to_block(semantic)
+    return product.to_block()
 end
 
 function sea128(jsonContent::Dict)

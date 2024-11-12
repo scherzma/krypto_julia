@@ -5,12 +5,13 @@ using Base64
 
 struct FieldElement
     value::ZZRingElem
+    semantic::String
     field::ZZRingElem
 end
 
-FieldElement(value::Int) = FieldElement(value, ZZ(0x100000000000000000000000000000087))
-FieldElement(value::UInt128) = FieldElement(ZZ(value), ZZ(0x100000000000000000000000000000087))
-FieldElement(value::ZZRingElem) = FieldElement(value, ZZ(0x100000000000000000000000000000087))
+FieldElement(value::Int, semantic::String) = FieldElement(ZZ(value), semantic, ZZ(0x100000000000000000000000000000087))
+FieldElement(value::UInt128, semantic::String) = FieldElement(ZZ(value), semantic, ZZ(0x100000000000000000000000000000087))
+FieldElement(value::ZZRingElem, semantic::String) = FieldElement(value, semantic, ZZ(0x100000000000000000000000000000087))
 
 function FieldElement(poly::Array{UInt8}, semantic::String)
     aggregate = ZZ(0)
@@ -30,7 +31,30 @@ function FieldElement(poly::Array{UInt8}, semantic::String)
     else
         throw(ArgumentError("Unknown semantic"))
     end
-    FieldElement(aggregate)
+    FieldElement(aggregate, semantic)
+end
+
+
+function FieldElement(base64::String, semantic::String)
+
+    result::ZZRingElem = 0
+    a_array = base64decode(base64)
+    # gcm
+    #00000001000100100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000
+    if semantic == "xex"
+        reverse!(a_array)
+        for byte in a_array
+            result = result << 8  # Shift left by 8 bits
+            result = result | ZZ(byte)  # OR with current byte
+        end
+    elseif semantic == "gcm"
+        for byte in a_array
+            result = result << 8  # Shift left by 8 bits
+            result = result | ZZ(byte)  # OR with current byte
+        end
+    end
+
+    return FieldElement(result, semantic)
 end
 
 import Base.:+
@@ -38,31 +62,31 @@ function Base.:+(a::FieldElement, b::FieldElement)
     if a.field != b.field
         throw(ArgumentError("Cannot add elements from different fields"))
     end
-    return FieldElement(a.value ⊻ b.value, a.field)
+    return FieldElement(a.value ⊻ b.value, a.semantic, a.field)
 end
 
 import Base.:⊻
 function Base.:⊻(a::FieldElement, b::FieldElement)
-    return FieldElement(a.value ⊻ b.value, a.field)
+    return FieldElement(a.value ⊻ b.value, a.semantic, a.field)
 end
 
 function Base.:⊻(a::FieldElement, b::ZZRingElem)
-    return FieldElement(a.value ⊻ b, a.field)
+    return FieldElement(a.value ⊻ b, a.semantic, a.field)
 end
 
 import Base.:<<
 function Base.:<<(a::FieldElement, b::Int)
-    return FieldElement(a.value << b, a.field)
+    return FieldElement(a.value << b, a.semantic, a.field)
 end
 
 import Base.:>>
 function Base.:>>(a::FieldElement, b::Int)
-    return FieldElement(a.value >> b, a.field)
+    return FieldElement(a.value >> b, a.semantic, a.field)
 end
 
 import Base.:%
 function Base.:%(a::FieldElement, b::FieldElement)
-    return FieldElement(a.value % b.value, a.field)
+    return FieldElement(a.value % b.value, a.semantic, a.field)
 end
 
 
@@ -101,7 +125,7 @@ function Base.:*(a::FieldElement, b::FieldElement)
 
     end
     
-    return FieldElement(aggregate, a.field)
+    return FieldElement(aggregate, a.semantic, a.field)
 end
 
 
@@ -114,16 +138,16 @@ function bit_string(a::FieldElement)
     return join(reverse(digits(a.value, base=2, pad=128))) # return join(reverse([(a.value >> i) % 2 == 1 ? 1 : 0 for i in 1:nbits(a.value)]))
 end
 
-function to_polynomial(a::FieldElement, semantic::String)
+function to_polynomial(a::FieldElement)
     result = Vector{UInt8}(undef, 0)
 
-    if semantic == "xex"
+    if a.semantic == "xex"
         for i in 0:127
             if (a.value >> i) % 2 == 1
                 push!(result, 120 + i&0b0000_0111 -i&0b1111_1000)
             end
         end
-    elseif semantic == "gcm"
+    elseif a.semantic == "gcm"
         for i in 0:127
             if (a.value >> i) % 2 == 1
                 push!(result, 127 - i)
@@ -137,19 +161,33 @@ function to_polynomial(a::FieldElement, semantic::String)
 end
 
 
-function to_block(a::FieldElement, semantic::String)
-    # Calculate number of bytes needed
+function to_block(a::FieldElement)
+    # Always work with 128 bits (16 bytes)
+    BLOCK_SIZE = 16
+    bytes = Vector{UInt8}(undef, BLOCK_SIZE)
     value = a.value
-    bit_size = nbits(value)
-    num_bytes = ceil(Int, bit_size / 8)
     
-    bytes = Vector{UInt8}(undef, num_bytes)
+    # Initialize bytes to zero
+    fill!(bytes, 0x00)
     
     mask = ZZ(0xFF)
-    for i in 0:(num_bytes-1)
-        shift = i * 8
-        byte_val = Int((value >> shift) & mask)
-        bytes[num_bytes - i] = UInt8(byte_val)
+    
+    if a.semantic == "xex"
+        # For xex semantic, store in little-endian order
+        for i in 0:(BLOCK_SIZE-1)
+            shift = i * 8
+            byte_val = Int((value >> shift) & mask)
+            bytes[i + 1] = UInt8(byte_val)
+        end
+    elseif a.semantic == "gcm"
+        # For gcm semantic, store in big-endian order
+        for i in 0:(BLOCK_SIZE-1)
+            shift = (BLOCK_SIZE - 1 - i) * 8
+            byte_val = Int((value >> shift) & mask)
+            bytes[i + 1] = UInt8(byte_val)
+        end
+    else
+        throw(ArgumentError("Unknown semantic: $semantic"))
     end
     
     return base64encode(bytes)
@@ -159,39 +197,17 @@ end
 
 import Base: getproperty
 function getproperty(gf::FieldElement, sym::Symbol)
-    if sym === :block
-        return (semantic::String) -> block(gf, semantic)
-    end
     if sym === :bit_string
         return () -> bit_string(gf)
     end
     if sym === :to_block
-        return (semantic::String) -> to_block(gf, semantic)
+        return () -> to_block(gf)
     end
     if sym === :to_polynomial
-        return (semantic::String) -> to_polynomial(gf, semantic)
+        return () -> to_polynomial(gf)
     end
     return getfield(gf, sym)
 end
-
-
-#a = FieldElement(0b11000100, 0b100000000000000000000)
-#b = FieldElement(0b00000010, 0b100000000000000000000)
-#c = a * b
-#println(c)
-#println(c.bit_string())
-
-# 1422689339238542770217355994206306432
-# 2658455991569831745807614120560689152
-
-a = FieldElement(ZZRingElem(1422689339238542770217355994206306432)) # GF:340282366920938463463374607431768211591
-b = FieldElement(ZZRingElem(2658455991569831745807614120560689152))
-println(a)
-println(b)
-c = a * b    # 176974246126301064890833436885137752064
-println(c)   # 10000101001001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-println(c.bit_string())
-
 
 
 end
