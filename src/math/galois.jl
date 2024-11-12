@@ -11,25 +11,16 @@ end
 
 FieldElement(value::Int, semantic::String) = FieldElement(ZZ(value), semantic, ZZ(0x100000000000000000000000000000087))
 FieldElement(value::UInt128, semantic::String) = FieldElement(ZZ(value), semantic, ZZ(0x100000000000000000000000000000087))
+FieldElement(value::UInt128) = FieldElement(ZZRingElem(value), "XEX", ZZ(0x100000000000000000000000000000087))
 FieldElement(value::ZZRingElem, semantic::String) = FieldElement(value, semantic, ZZ(0x100000000000000000000000000000087))
 
 function FieldElement(poly::Array{UInt8}, semantic::String)
     aggregate = ZZ(0)
     one = ZZ(1)
-    if semantic == "xex"
-        for i in poly
-            if i < 128
-                aggregate |= one << (120 + i&0b0000_0111 -i&0b1111_1000)
-            end
+    for i in poly
+        if i < 128
+            aggregate |= (one << Int(i))
         end
-    elseif semantic == "gcm"
-        for i in poly
-            if i < 128
-                aggregate |= one << (127 - i)
-            end
-        end
-    else
-        throw(ArgumentError("Unknown semantic"))
     end
     FieldElement(aggregate, semantic)
 end
@@ -39,18 +30,20 @@ function FieldElement(base64::String, semantic::String)
 
     result::ZZRingElem = 0
     a_array = base64decode(base64)
-    # gcm
-    #00000001000100100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000
+
+
     if semantic == "xex"
-        reverse!(a_array)
-        for byte in a_array
-            result = result << 8  # Shift left by 8 bits
-            result = result | ZZ(byte)  # OR with current byte
+        for (i, byte) in enumerate(a_array)
+            result = result | ZZRingElem(byte) << (8 * (i-1))
         end
-    elseif semantic == "gcm"
-        for byte in a_array
-            result = result << 8  # Shift left by 8 bits
-            result = result | ZZ(byte)  # OR with current byte
+    elseif semantic == "gcm" # + i&0b0000_0111 - i&0b1111_1000
+        for (i, b) in enumerate(a_array)
+
+            b = (b & 0xF0) >> 4 | (b & 0x0F) << 4
+            b = (b & 0xCC) >> 2 | (b & 0x33) << 2
+            b = (b & 0xAA) >> 1 | (b & 0x55) << 1
+            
+            result = result | (ZZRingElem(b) << ((i-1) * 8))
         end
     end
 
@@ -135,31 +128,14 @@ function Base.show(io::IO, a::FieldElement)
 end
 
 function bit_string(a::FieldElement)
-    return join(reverse(digits(a.value, base=2, pad=128))) # return join(reverse([(a.value >> i) % 2 == 1 ? 1 : 0 for i in 1:nbits(a.value)]))
+    return join(reverse(digits(a.value, base=2, pad=128)))
 end
 
 function to_polynomial(a::FieldElement)
-    result = Vector{UInt8}(undef, 0)
-
-    if a.semantic == "xex"
-        for i in 0:127
-            if (a.value >> i) % 2 == 1
-                push!(result, 120 + i&0b0000_0111 -i&0b1111_1000)
-            end
-        end
-    elseif a.semantic == "gcm"
-        for i in 0:127
-            if (a.value >> i) % 2 == 1
-                push!(result, 127 - i)
-            end
-        end
-    else
-        throw(ArgumentError("Unknown semantic"))
-    end
-
-    return result
+    return [x for x in 0:127 if (a.value >> x) % 2 == 1] 
 end
 
+const BIT_REVERSE_TABLE = UInt8[0, 128, 64, 192, 32, 160, 96, 224, 16, 144, 80, 208, 48, 176, 112, 240, 8, 136, 72, 200, 40, 168, 104, 232, 24, 152, 88, 216, 56, 184, 120, 248, 4, 132, 68, 196, 36, 164, 100, 228, 20, 148, 84, 212, 52, 180, 116, 244, 12, 140, 76, 204, 44, 172, 108, 236, 28, 156, 92, 220, 60, 188, 124, 252, 2, 130, 66, 194, 34, 162, 98, 226, 18, 146, 82, 210, 50, 178, 114, 242, 10, 138, 74, 202, 42, 170, 106, 234, 26, 154, 90, 218, 58, 186, 122, 250, 6, 134, 70, 198, 38, 166, 102, 230, 22, 150, 86, 214, 54, 182, 118, 246, 14, 142, 78, 206, 46, 174, 110, 238, 30, 158, 94, 222, 62, 190, 126, 254, 1, 129, 65, 193, 33, 161, 97, 225, 17, 145, 81, 209, 49, 177, 113, 241, 9, 137, 73, 201, 41, 169, 105, 233, 25, 153, 89, 217, 57, 185, 121, 249, 5, 133, 69, 197, 37, 165, 101, 229, 21, 149, 85, 213, 53, 181, 117, 245, 13, 141, 77, 205, 45, 173, 109, 237, 29, 157, 93, 221, 61, 189, 125, 253, 3, 131, 67, 195, 35, 163, 99, 227, 19, 147, 83, 211, 51, 179, 115, 243, 11, 139, 75, 203, 43, 171, 107, 235, 27, 155, 91, 219, 59, 187, 123, 251, 7, 135, 71, 199, 39, 167, 103, 231, 23, 151, 87, 215, 55, 183, 119, 247, 15, 143, 79, 207, 47, 175, 111, 239, 31, 159, 95, 223, 63, 191, 127, 255]
 
 function to_block(a::FieldElement)
     # Always work with 128 bits (16 bytes)
@@ -167,24 +143,19 @@ function to_block(a::FieldElement)
     bytes = Vector{UInt8}(undef, BLOCK_SIZE)
     value = a.value
     
-    # Initialize bytes to zero
-    fill!(bytes, 0x00)
-    
     mask = ZZ(0xFF)
     
     if a.semantic == "xex"
-        # For xex semantic, store in little-endian order
         for i in 0:(BLOCK_SIZE-1)
             shift = i * 8
-            byte_val = Int((value >> shift) & mask)
-            bytes[i + 1] = UInt8(byte_val)
+            byte_val = UInt8((value >> shift) & mask)
+            bytes[i + 1] = byte_val
         end
     elseif a.semantic == "gcm"
-        # For gcm semantic, store in big-endian order
         for i in 0:(BLOCK_SIZE-1)
-            shift = (BLOCK_SIZE - 1 - i) * 8
-            byte_val = Int((value >> shift) & mask)
-            bytes[i + 1] = UInt8(byte_val)
+            shift = i * 8
+            b = UInt8((value >> shift) & mask)
+            bytes[i + 1] = BIT_REVERSE_TABLE[b + 1]
         end
     else
         throw(ArgumentError("Unknown semantic: $semantic"))
@@ -192,7 +163,6 @@ function to_block(a::FieldElement)
     
     return base64encode(bytes)
 end
-
 
 
 import Base: getproperty
