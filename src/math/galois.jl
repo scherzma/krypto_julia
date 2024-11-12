@@ -58,6 +58,15 @@ function Base.:+(a::FieldElement, b::FieldElement)
     return FieldElement(a.value ⊻ b.value, a.semantic, a.field)
 end
 
+function Base.:+(a::FieldElement, b::Vector{UInt8})
+
+    value = a.value
+    for i in 1:length(b)
+        value = value ⊻ (ZZ(b[i]) << (8 * (i-1)))
+    end
+    return FieldElement(value, a.semantic, a.field)
+end
+
 import Base.:⊻
 function Base.:⊻(a::FieldElement, b::FieldElement)
     return FieldElement(a.value ⊻ b.value, a.semantic, a.field)
