@@ -6,6 +6,7 @@ Directory Structure:
         📁 math/
             📄 galois.jl (Content follows below)
         📁 util/
+            📄 conversions.jl (Content follows below)
             📄 processor.jl (Content follows below)
     📄 kauma
     📄 Manifest.toml
@@ -24,7 +25,6 @@ File: kauma
 
 #!/usr/bin/env julia
 
-module Kauma
 using JSON
 include("src/util/processor.jl")
 using .Processing: process
@@ -40,11 +40,8 @@ function main()
     process(jsonContent)
 end
 
-if abspath(PROGRAM_FILE) == @__FILE__
-    main()
-end
+main()
 
-end
 
 ===========================================
 File: src\math\galois.jl
@@ -53,6 +50,7 @@ File: src\math\galois.jl
 
 module Galois
 using Nemo
+using Base64
 
 struct FieldElement
     value::ZZRingElem
@@ -60,19 +58,20 @@ struct FieldElement
 end
 
 FieldElement(value::Int) = FieldElement(value, ZZ(0x100000000000000000000000000000087))
+FieldElement(value::UInt128) = FieldElement(ZZ(value), ZZ(0x100000000000000000000000000000087))
 FieldElement(value::ZZRingElem) = FieldElement(value, ZZ(0x100000000000000000000000000000087))
 
-function FieldElement(value::Array{UInt8}, semantic::String)
+function FieldElement(poly::Array{UInt8}, semantic::String)
     aggregate = ZZ(0)
     one = ZZ(1)
     if semantic == "xex"
-        for i in value
+        for i in poly
             if i < 128
                 aggregate |= one << (120 + i&0b0000_0111 -i&0b1111_1000)
             end
         end
     elseif semantic == "gcm"
-        for i in value
+        for i in poly
             if i < 128
                 aggregate |= one << (127 - i)
             end
@@ -88,35 +87,120 @@ function Base.:+(a::FieldElement, b::FieldElement)
     if a.field != b.field
         throw(ArgumentError("Cannot add elements from different fields"))
     end
-    return FieldElement(a.value ^ b.value, a.field)
+    return FieldElement(a.value ⊻ b.value, a.field)
 end
+
+import Base.:⊻
+function Base.:⊻(a::FieldElement, b::FieldElement)
+    return FieldElement(a.value ⊻ b.value, a.field)
+end
+
+function Base.:⊻(a::FieldElement, b::ZZRingElem)
+    return FieldElement(a.value ⊻ b, a.field)
+end
+
+import Base.:<<
+function Base.:<<(a::FieldElement, b::Int)
+    return FieldElement(a.value << b, a.field)
+end
+
+import Base.:>>
+function Base.:>>(a::FieldElement, b::Int)
+    return FieldElement(a.value >> b, a.field)
+end
+
+import Base.:%
+function Base.:%(a::FieldElement, b::FieldElement)
+    return FieldElement(a.value % b.value, a.field)
+end
+
+
+# .length() returns the number of bits in the value
+import Base.length
+Base.length(a::FieldElement) = nbits(a.value)
 
 import Base.:*
 function Base.:*(a::FieldElement, b::FieldElement)
     if a.field != b.field
         throw(ArgumentError("Cannot multiply elements from different fields"))
     end
-    return FieldElement(a.value ^ b.value, a.field)
+
+    aggregate = FieldElement(0, a.field)
+
+    if (b.value) % 2 == 1
+        aggregate ⊻= a
+    end
+
+    for i in 1:length(b)
+        a <<= 1
+        a ⊻= a.field
+        
+        if (b.value >> i) % 2 == 1
+            aggregate ⊻= a
+        end
+
+    end
+    
+    return aggregate
 end
+
+a = FieldElement(0b11000100, 0b101001101)
+b = FieldElement(0b10000101, 0b101001101)
+c = a * b
+println(c)
 
 import Base.show
 function Base.show(io::IO, a::FieldElement)
     print(io, "FieldElement($(a.value), $(a.field))")
 end
 
-function block(a::FieldElement, semantic::String)
-    if semantic == "xex"
-        return a.value >> 136
-    elseif semantic == "gcm"
-        return a.value >> 127
-    else
-        throw(ArgumentError("Unknown semantic"))
-    end
-end
-
 function bit_string(a::FieldElement)
     return join(reverse(digits(a.value, base=2, pad=128))) # return join(reverse([(a.value >> i) % 2 == 1 ? 1 : 0 for i in 1:nbits(a.value)]))
 end
+
+
+function to_polynomial(a::FieldElement, semantic::String)
+    result = Vector{UInt8}(undef, 0)
+
+    if semantic == "xex"
+        for i in 0:127
+            if (a.value >> i) % 2 == 1
+                push!(result, 120 + i&0b0000_0111 -i&0b1111_1000)
+            end
+        end
+    elseif semantic == "gcm"
+        for i in 0:127
+            if (a.value >> i) % 2 == 1
+                push!(result, 127 - i)
+            end
+        end
+    else
+        throw(ArgumentError("Unknown semantic"))
+    end
+
+    return result
+end
+
+
+function to_block(a::FieldElement, semantic::String)
+    # Calculate number of bytes needed
+    value = a.value
+    bit_size = nbits(value)
+    num_bytes = ceil(Int, bit_size / 8)
+    
+    bytes = Vector{UInt8}(undef, num_bytes)
+    
+    mask = ZZ(0xFF)
+    for i in 0:(num_bytes-1)
+        shift = i * 8
+        byte_val = Int((value >> shift) & mask)
+        bytes[num_bytes - i] = UInt8(byte_val)
+    end
+    
+    return base64encode(bytes)
+end
+
+
 
 import Base: getproperty
 function getproperty(gf::FieldElement, sym::Symbol)
@@ -126,8 +210,43 @@ function getproperty(gf::FieldElement, sym::Symbol)
     if sym === :bit_string
         return () -> bit_string(gf)
     end
+    if sym === :to_block
+        return (semantic::String) -> to_block(gf, semantic)
+    end
+    if sym === :to_polynomial
+        return (semantic::String) -> to_polynomial(gf, semantic)
+    end
     return getfield(gf, sym)
 end
+end
+
+===========================================
+File: src\util\conversions.jl
+===========================================
+
+
+
+module Conversions
+using Nemo
+using Base64
+
+function base64_to_Nemo(base64::String)
+
+    result::ZZRingElem = 0
+    a_array = base64decode(base64)
+
+    println("a_array: ", a_array)
+
+
+    for byte in a_array
+        result = result << 8  # Shift left by 8 bits
+        result = result | ZZ(byte)  # OR with current byte
+    end
+
+    return result
+end
+
+
 end
 
 ===========================================
@@ -138,8 +257,11 @@ File: src\util\processor.jl
 
 module Processing
 using JSON
+using Base64
 include("../math/galois.jl")
+include("conversions.jl")
 using .Galois: FieldElement
+using .Conversions: base64_to_Nemo
 
 function add_numbers(jsonContent::Dict)
     return jsonContent["number1"] + jsonContent["number2"]
@@ -150,24 +272,42 @@ function subtract_numbers(jsonContent::Dict)
 end
 
 function poly2block(jsonContent::Dict)
-    println("poly2block: ", jsonContent)
     coefficients::Array{UInt8} = jsonContent["coefficients"]
     semantic::String = jsonContent["semantic"]
     gf = FieldElement(coefficients, semantic)
-    println("GF Value: XXXXXXXXXXXXXXXX ", gf.value)
-    return gf.bit_string()
+    return gf.to_block(semantic)
 end
 
 function block2poly(jsonContent::Dict)
-    println("block2poly")
-    println("jsonContent: ", jsonContent)
-    return "polynomial"
+    semantic::String = jsonContent["semantic"]
+    block::String = jsonContent["block"]
+
+    println("Block: ", block)
+    println("Semantic: ", semantic)
+
+
+
+    gf = FieldElement(base64_to_Nemo(block))
+
+    result = gf.to_polynomial(semantic)
+    println("Result: ", [Int(b) for b in result])
+    return result
 end
 
 function gfmul(jsonContent::Dict)
-    println("gfmul")
-    println("jsonContent: ", jsonContent)
-    return "polynomial"
+    semantic::String = jsonContent["semantic"]
+    a::String = jsonContent["a"]
+    b::String = jsonContent["b"]
+
+    a_ZZ = base64_to_Nemo(a)
+    b_ZZ = base64_to_Nemo(b)
+
+    println("a_ZZ: ", a_ZZ)
+    println("b_ZZ: ", b_ZZ)
+
+    gf_a = FieldElement(a_ZZ)
+    gf_b = FieldElement(b_ZZ)
+    return (gf_a * gf_b).to_block(semantic)
 end
 
 function sea128(jsonContent::Dict)
@@ -204,8 +344,8 @@ end
 ACTIONS::Dict{String, Vector{Any}} = Dict(
     "add_numbers" => [add_numbers, ["sum"]],
     "subtract_numbers" => [subtract_numbers, ["difference"]],
-    "poly2block" => [poly2block, ["polynomial"]],
-    "block2poly" => [block2poly, ["polynomial"]],
+    "poly2block" => [poly2block, ["block"]],
+    "block2poly" => [block2poly, ["coefficients"]],
     "gfmul" => [gfmul, ["polynomial"]],
     "sea128" => [sea128, ["ciphertext"]],
     "xex" => [xex, ["ciphertext"]],
@@ -231,13 +371,17 @@ function process(jsonContent::Dict)
         json_result = Dict()
 
         for (i, key) in enumerate(output_key)
-            json_result[key] = result[i]
+            if length(ACTIONS[action][2]) == 1
+                json_result[key] = result
+            else
+                json_result[key] = result[i]
+            end
         end
 
         result_testcases[key] = json_result
     end
 
-    println(JSON.json(result_testcases))
+    println(JSON.json(result_testcases, 1))
 
 end
 end

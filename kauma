@@ -1,6 +1,5 @@
 #!/usr/bin/env julia
 
-module Kauma
 using JSON
 include("src/util/processor.jl")
 using .Processing: process
@@ -16,8 +15,4 @@ function main()
     process(jsonContent)
 end
 
-if abspath(PROGRAM_FILE) == @__FILE__
-    main()
-end
-
-end
+main()

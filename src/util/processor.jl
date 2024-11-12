@@ -2,8 +2,11 @@
 
 module Processing
 using JSON
+using Base64
 include("../math/galois.jl")
-using .Galois: FieldElement, galois_to_base64_alt
+include("conversions.jl")
+using .Galois: FieldElement
+using .Conversions: base64_to_Nemo
 
 function add_numbers(jsonContent::Dict)
     return jsonContent["number1"] + jsonContent["number2"]
@@ -23,17 +26,35 @@ end
 function block2poly(jsonContent::Dict)
     semantic::String = jsonContent["semantic"]
     block::String = jsonContent["block"]
-    gf = FieldElement(base64decode(block), semantic)
-    return gf.to_polynomial()
+
+    println("Block: ", block)
+    println("Semantic: ", semantic)
+
+
+
+    gf = FieldElement(base64_to_Nemo(block, semantic))
+
+    result = gf.to_polynomial(semantic)
+    println("Result: ", [Int(b) for b in result])
+    return result
 end
 
 function gfmul(jsonContent::Dict)
     semantic::String = jsonContent["semantic"]
     a::String = jsonContent["a"]
     b::String = jsonContent["b"]
-    gf_a = FieldElement(base64decode(a), semantic)
-    gf_b = FieldElement(base64decode(b), semantic)
-    return (gf_a * gf_b).to_block(semantic)
+
+    a_ZZ = base64_to_Nemo(a, semantic)
+    b_ZZ = base64_to_Nemo(b, semantic)
+
+    println("a_ZZ: ", a_ZZ)
+    println("b_ZZ: ", b_ZZ)
+
+    gf_a = FieldElement(a_ZZ)
+    gf_b = FieldElement(b_ZZ)
+
+    product = gf_a * gf_b
+    return (product).to_block(semantic)
 end
 
 function sea128(jsonContent::Dict)
@@ -71,7 +92,7 @@ ACTIONS::Dict{String, Vector{Any}} = Dict(
     "add_numbers" => [add_numbers, ["sum"]],
     "subtract_numbers" => [subtract_numbers, ["difference"]],
     "poly2block" => [poly2block, ["block"]],
-    "block2poly" => [block2poly, ["polynomial"]],
+    "block2poly" => [block2poly, ["coefficients"]],
     "gfmul" => [gfmul, ["polynomial"]],
     "sea128" => [sea128, ["ciphertext"]],
     "xex" => [xex, ["ciphertext"]],
@@ -97,7 +118,7 @@ function process(jsonContent::Dict)
         json_result = Dict()
 
         for (i, key) in enumerate(output_key)
-            if isa(result, String)
+            if length(ACTIONS[action][2]) == 1
                 json_result[key] = result
             else
                 json_result[key] = result[i]
