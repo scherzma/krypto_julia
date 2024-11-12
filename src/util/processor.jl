@@ -5,8 +5,11 @@ using JSON
 using Base64
 include("../math/galois.jl")
 include("conversions.jl")
+include("../algorithms/sea128.jl")
 using .Galois: FieldElement
 using .Conversions: base64_to_Nemo
+using .Sea128: encrypt_sea, decrypt_sea
+
 
 function add_numbers(jsonContent::Dict)
     return jsonContent["number1"] + jsonContent["number2"]
@@ -46,9 +49,20 @@ function gfmul(jsonContent::Dict)
 end
 
 function sea128(jsonContent::Dict)
-    println("sea128")
-    println("jsonContent: ", jsonContent)
-    return "ciphertext"
+    mode::String = jsonContent["mode"]
+    key::String = jsonContent["key"]
+    input::String = jsonContent["input"]
+    
+    key_bytes = base64decode(key)
+    input_bytes = base64decode(input)
+
+    if mode == "encrypt"
+        result_bytes = encrypt_sea(key_bytes, input_bytes)
+    elseif mode == "decrypt"
+        result_bytes = decrypt_sea(key_bytes, input_bytes)
+    end
+
+    return base64encode(result_bytes)
 end
 
 function xex(jsonContent::Dict)

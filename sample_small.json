@@ -1,0 +1,27 @@
+{
+  "testcases": {
+    "poly2block4GCMasd": {
+      "action": "poly2block",
+      "arguments": {
+        "semantic": "gcm",
+        "coefficients": [
+          64, 2
+        ]
+      }
+    },
+    "block2poly5GCM": {
+      "action": "block2poly",
+      "arguments": {
+        "semantic": "gcm",
+        "block": "AAABxQgAAAAAAAQQAAAAAA=="
+      }
+    },
+    "block2poly3GCM": {
+      "action": "block2poly",
+      "arguments": {
+        "semantic": "gcm",
+        "block": "ARIAAAAAAAAAAAAAAAAAgA=="
+      }
+    }
+  }
+}
