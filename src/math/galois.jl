@@ -11,6 +11,7 @@ end
 
 FieldElement(value::Int, semantic::String) = FieldElement(ZZ(value), semantic, ZZ(0x100000000000000000000000000000087))
 FieldElement(value::UInt128, semantic::String) = FieldElement(ZZ(value), semantic, ZZ(0x100000000000000000000000000000087))
+FieldElement(value::UInt128) = FieldElement(ZZRingElem(value), "XEX", ZZ(0x100000000000000000000000000000087))
 FieldElement(value::ZZRingElem, semantic::String) = FieldElement(value, semantic, ZZ(0x100000000000000000000000000000087))
 
 function FieldElement(poly::Array{UInt8}, semantic::String)
@@ -141,9 +142,6 @@ function to_block(a::FieldElement)
     BLOCK_SIZE = 16
     bytes = Vector{UInt8}(undef, BLOCK_SIZE)
     value = a.value
-    
-    # Initialize bytes to zero
-    #fill!(bytes, 0x00)
     
     mask = ZZ(0xFF)
     
