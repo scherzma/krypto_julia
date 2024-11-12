@@ -28,8 +28,6 @@ function FieldElement(poly::Array{UInt8}, semantic::String)
                 aggregate |= one << (127 - i)
             end
         end
-    else
-        throw(ArgumentError("Unknown semantic"))
     end
     FieldElement(aggregate, semantic)
 end
@@ -39,18 +37,20 @@ function FieldElement(base64::String, semantic::String)
 
     result::ZZRingElem = 0
     a_array = base64decode(base64)
-    # gcm
-    #00000001000100100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000
+
+    
     if semantic == "xex"
-        reverse!(a_array)
-        for byte in a_array
-            result = result << 8  # Shift left by 8 bits
-            result = result | ZZ(byte)  # OR with current byte
+        for (i, byte) in enumerate(a_array)
+            result = result | ZZRingElem(byte) << (8 * (i-1))
         end
     elseif semantic == "gcm"
-        for byte in a_array
-            result = result << 8  # Shift left by 8 bits
-            result = result | ZZ(byte)  # OR with current byte
+        for (i, b) in enumerate(a_array)
+
+            b = (b & 0xF0) >> 4 | (b & 0x0F) << 4
+            b = (b & 0xCC) >> 2 | (b & 0x33) << 2
+            b = (b & 0xAA) >> 1 | (b & 0x55) << 1
+            
+            result = result | (ZZRingElem(b) << ((i-1) * 8))
         end
     end
 
