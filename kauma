@@ -14,8 +14,8 @@ function main()
         file = ARGS[1]
     end
     
-    jsonContent = JSON.parsefile(file)
-    process(jsonContent)
+    @time jsonContent = JSON.parsefile(file)
+    @time process(jsonContent)
 end
 
 
