@@ -3,13 +3,16 @@
 module Processing
 using JSON
 using Base64
-include("../math/galois.jl")
-include("conversions.jl")
+
+include("../util/semantic_types.jl")
+using .SemanticTypes: Semantic, from_string
+include("../math/galois_fast.jl")
 include("../algorithms/sea128.jl")
 include("../algorithms/xex_fde.jl")
 include("../algorithms/gcm.jl")
-using .Galois: FieldElement
-using .Conversions: base64_to_Nemo
+include("../algorithms/padding_oracle.jl")
+using .PaddingOracle: PaddingClient, send_to_server, padding_attack
+using .Galois_quick: FieldElement_quick
 using .Sea128: encrypt_sea, decrypt_sea
 using .FDE: encrypt_fde, decrypt_fde
 using .GCM: encrypt_gcm, decrypt_gcm
@@ -25,28 +28,28 @@ end
 
 function poly2block(jsonContent::Dict)
     coefficients::Array{UInt8} = jsonContent["coefficients"]
-    semantic::String = jsonContent["semantic"]
-    gf = FieldElement(coefficients, semantic)
+    semantic = from_string(jsonContent["semantic"])
+    gf = FieldElement_quick(coefficients, semantic)
     return gf.to_block()
 end
 
 function block2poly(jsonContent::Dict)
-    semantic::String = jsonContent["semantic"]
+    semantic = from_string(jsonContent["semantic"])
     block::String = jsonContent["block"]
 
-    gf = FieldElement(block, semantic)
+    gf = FieldElement_quick(block, semantic)
 
     result = gf.to_polynomial()
     return result
 end
 
 function gfmul(jsonContent::Dict)
-    semantic::String = jsonContent["semantic"]
+    semantic = from_string(jsonContent["semantic"])
     a::String = jsonContent["a"]
     b::String = jsonContent["b"]
 
-    gf_a = FieldElement(a, semantic)
-    gf_b = FieldElement(b, semantic)
+    gf_a = FieldElement_quick(a, semantic)
+    gf_b = FieldElement_quick(b, semantic)
 
     product = gf_a * gf_b
     return product.to_block()
@@ -129,7 +132,11 @@ function gcm_encrypt(jsonContent::Dict)
 end
 
 function padding_oracle_chaggpt(jsonContent::Dict)
-    return "plaintext"
+    hostname::String = jsonContent["hostname"]
+    port::Int = jsonContent["port"]
+    iv::Array{UInt8} = base64decode(jsonContent["iv"])
+    ciphertext::Array{UInt8} = base64decode(jsonContent["ciphertext"])
+    return padding_attack(hostname, port, iv, ciphertext)
 end
 
 
@@ -173,7 +180,7 @@ function process(jsonContent::Dict)
         result_testcases[key] = json_result
     end
 
-    println(JSON.json(result_testcases, 1))
+    println(JSON.json(Dict("testcases" => result_testcases)))
 
 end
 end

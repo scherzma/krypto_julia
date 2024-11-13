@@ -1,16 +1,11 @@
-name = "Krypto"
-uuid = "45f0b7f9-38d9-4bd0-8641-eba09fb82ac0"
-authors = ["Your Name"]
-version = "0.1.0"
+name = "MyProject"
+uuid = "7504572a-932e-400c-9a8d-5eba8b318490"
 
 [deps]
-JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
-Nemo = "2edaba10-b0f1-5616-af89-8c11ac63239a"
-PackageCompiler = "9b87118b-4619-50d2-8e1e-99f35a4d4d9d"
 Base64 = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+Nettle = "49dea1ee-f6fa-5aa6-9a11-8816cee7d4b9"
 
 [compat]
-JSON = "0.21.4"
-Nemo = "0.47.3"
-PackageCompiler = "2.1.22"
-
+BenchmarkTools = "1.5.0"

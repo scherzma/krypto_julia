@@ -1,13 +1,16 @@
 
 module GCM
 
-include("sea128.jl")
-include("../math/galois.jl")
 
+include("../util/semantic_types.jl")
+using .SemanticTypes
+
+include("sea128.jl")
+include("../math/galois_fast.jl")
 using Nettle
 using Base64
 using .Sea128: encrypt_sea, decrypt_sea
-using .Galois: FieldElement
+using .Galois_quick: FieldElement_quick
 
 
 arr_to_int(arr::Array{UInt8}) = reinterpret(UInt128, reverse(arr))[1]
@@ -18,14 +21,14 @@ function ghash(key::Array{UInt8}, nonce::Array{UInt8}, text::Array{UInt8}, ad::A
 
     enc_func = algorithm == "aes128" ? encrypt : encrypt_sea 
     auth_key = enc_func("aes128", key, zeros(UInt8, 16))
-    auth_key = FieldElement(arr_to_int(auth_key), "gcm")
+    auth_key = FieldElement_quick(arr_to_int(auth_key), SemanticTypes.GCM)
 
     len_block = vcat(
         reverse(reinterpret(UInt8, [length(ad) << 3])),
         reverse(reinterpret(UInt8, [length(text) << 3]))
     )
     
-    Y = FieldElement(UInt128(0), "gcm")
+    Y = FieldElement_quick(UInt128(0), SemanticTypes.GCM)
     data = [pad_array(ad); pad_array(text); len_block]
 
     for i in 1:16:(length(data) - 1)
