@@ -12,28 +12,33 @@ using .Galois: FieldElement
 
 function ghash(key::Array{UInt8}, nonce::Array{UInt8}, text::Array{UInt8}, ad::Array{UInt8}, algorithm::String)
 
-    result_text = Array{UInt8}(undef, 0)
-    enc_func = algorithm == "aes128" ? encrypt : encrypt_sea
- 
-    auth_key = enc_func("aes128", key, [nonce; zeros(UInt8, 4)])
+    enc_func = algorithm == "aes128" ? encrypt : encrypt_sea 
+    auth_key = enc_func("aes128", key, zeros(UInt8, 16))
 
     len_block = vcat(
         reverse(reinterpret(UInt8, [length(ad) << 3])),
         reverse(reinterpret(UInt8, [length(text) << 3]))
     )
 
-    println(len_block)
+    ad_pad_bytes = [ad; zeros(UInt8, (16 - length(ad) % 16))]
+    text_pad_bytes = [text; zeros(UInt8, (16 - length(text) % 16))]
 
+    ad_pad_int = (reinterpret(UInt128, ad_pad_bytes))[1]
+    ad_pad_gf = FieldElement(ad_pad_int, "gcm")
     auth_key_gf = FieldElement(auth_key, "gcm")
-    asdf = (reinterpret(UInt128, [ad; zeros(UInt8, 16 - length(ad))]))[1]
-    ad_pad_gf = FieldElement(asdf, "gcm")
 
-    for i in 1:16:length(text)
-        ad_pad_gf = ad_pad_gf * auth_key_gf
-        ad_pad_gf = ad_pad_gf + text[i:i+15]
+    ad_pad_gf *= auth_key_gf
+
+    for i in 1:16:(length(text_pad_bytes) - 1)
+        ad_pad_gf +=  text_pad_bytes[i:i+15]
+        ad_pad_gf *=  auth_key_gf
     end
 
-    return ad_pad_gf .⊻ enc_func("AES128", key, [nonce; UInt8[0,0,0,1]])
+    ad_pad_gf += len_block
+    ad_pad_gf *= auth_key_gf
+
+    return ad_pad_gf + enc_func("AES128", key, [nonce; UInt8[0,0,0,1]])
+
 end
 
 
