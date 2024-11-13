@@ -9,6 +9,9 @@ struct FieldElement
     field::ZZRingElem
 end
 
+const BIT_REVERSE_TABLE = UInt8[0, 128, 64, 192, 32, 160, 96, 224, 16, 144, 80, 208, 48, 176, 112, 240, 8, 136, 72, 200, 40, 168, 104, 232, 24, 152, 88, 216, 56, 184, 120, 248, 4, 132, 68, 196, 36, 164, 100, 228, 20, 148, 84, 212, 52, 180, 116, 244, 12, 140, 76, 204, 44, 172, 108, 236, 28, 156, 92, 220, 60, 188, 124, 252, 2, 130, 66, 194, 34, 162, 98, 226, 18, 146, 82, 210, 50, 178, 114, 242, 10, 138, 74, 202, 42, 170, 106, 234, 26, 154, 90, 218, 58, 186, 122, 250, 6, 134, 70, 198, 38, 166, 102, 230, 22, 150, 86, 214, 54, 182, 118, 246, 14, 142, 78, 206, 46, 174, 110, 238, 30, 158, 94, 222, 62, 190, 126, 254, 1, 129, 65, 193, 33, 161, 97, 225, 17, 145, 81, 209, 49, 177, 113, 241, 9, 137, 73, 201, 41, 169, 105, 233, 25, 153, 89, 217, 57, 185, 121, 249, 5, 133, 69, 197, 37, 165, 101, 229, 21, 149, 85, 213, 53, 181, 117, 245, 13, 141, 77, 205, 45, 173, 109, 237, 29, 157, 93, 221, 61, 189, 125, 253, 3, 131, 67, 195, 35, 163, 99, 227, 19, 147, 83, 211, 51, 179, 115, 243, 11, 139, 75, 203, 43, 171, 107, 235, 27, 155, 91, 219, 59, 187, 123, 251, 7, 135, 71, 199, 39, 167, 103, 231, 23, 151, 87, 215, 55, 183, 119, 247, 15, 143, 79, 207, 47, 175, 111, 239, 31, 159, 95, 223, 63, 191, 127, 255]
+
+
 FieldElement(value::Int, semantic::String) = FieldElement(ZZ(value), semantic, ZZ(0x100000000000000000000000000000087))
 FieldElement(value::UInt128, semantic::String) = FieldElement(ZZ(value), semantic, ZZ(0x100000000000000000000000000000087))
 FieldElement(value::UInt128) = FieldElement(ZZRingElem(value), "XEX", ZZ(0x100000000000000000000000000000087))
@@ -39,9 +42,7 @@ function FieldElement(base64::String, semantic::String)
     elseif semantic == "gcm" # + i&0b0000_0111 - i&0b1111_1000
         for (i, b) in enumerate(a_array)
 
-            b = (b & 0xF0) >> 4 | (b & 0x0F) << 4
-            b = (b & 0xCC) >> 2 | (b & 0x33) << 2
-            b = (b & 0xAA) >> 1 | (b & 0x55) << 1
+            b = BIT_REVERSE_TABLE[b+1]
             
             result = result | (ZZRingElem(b) << ((i-1) * 8))
         end
@@ -58,6 +59,17 @@ function Base.:+(a::FieldElement, b::FieldElement)
     return FieldElement(a.value ⊻ b.value, a.semantic, a.field)
 end
 
+function Base.:+(a::FieldElement, b::Vector{UInt8})
+
+    println("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
+    value = a.value
+
+    for i in 1:length(b)
+        value = value ⊻ (ZZ(b[i]) << (8 * (i-1)))
+    end
+    return FieldElement(value+0x0103924afa, a.semantic, a.field)
+end
+
 import Base.:⊻
 function Base.:⊻(a::FieldElement, b::FieldElement)
     return FieldElement(a.value ⊻ b.value, a.semantic, a.field)
@@ -66,6 +78,7 @@ end
 function Base.:⊻(a::FieldElement, b::ZZRingElem)
     return FieldElement(a.value ⊻ b, a.semantic, a.field)
 end
+
 
 import Base.:<<
 function Base.:<<(a::FieldElement, b::Int)
@@ -122,6 +135,28 @@ function Base.:*(a::FieldElement, b::FieldElement)
 end
 
 
+
+import Base: iterate, eltype, length
+function Base.iterate(fe::FieldElement)
+    # Start with first byte (index 0)
+    return iterate(fe, 0)
+end
+
+function Base.iterate(fe::FieldElement, state)
+    # Stop after 16 bytes (128 bits)
+    if state >= 16
+        return nothing
+    end
+    
+    # Extract the current byte using bit shifting and masking
+    mask = ZZ(0xFF)
+    shift = state * 8
+    
+    byte_val = UInt8((fe.value >> shift) & mask)
+    return (byte_val, state + 1)
+end
+
+
 import Base.show
 function Base.show(io::IO, a::FieldElement)
     print(io, "FieldElement($(a.value), $(a.field))")
@@ -135,7 +170,6 @@ function to_polynomial(a::FieldElement)
     return [x for x in 0:127 if (a.value >> x) % 2 == 1] 
 end
 
-const BIT_REVERSE_TABLE = UInt8[0, 128, 64, 192, 32, 160, 96, 224, 16, 144, 80, 208, 48, 176, 112, 240, 8, 136, 72, 200, 40, 168, 104, 232, 24, 152, 88, 216, 56, 184, 120, 248, 4, 132, 68, 196, 36, 164, 100, 228, 20, 148, 84, 212, 52, 180, 116, 244, 12, 140, 76, 204, 44, 172, 108, 236, 28, 156, 92, 220, 60, 188, 124, 252, 2, 130, 66, 194, 34, 162, 98, 226, 18, 146, 82, 210, 50, 178, 114, 242, 10, 138, 74, 202, 42, 170, 106, 234, 26, 154, 90, 218, 58, 186, 122, 250, 6, 134, 70, 198, 38, 166, 102, 230, 22, 150, 86, 214, 54, 182, 118, 246, 14, 142, 78, 206, 46, 174, 110, 238, 30, 158, 94, 222, 62, 190, 126, 254, 1, 129, 65, 193, 33, 161, 97, 225, 17, 145, 81, 209, 49, 177, 113, 241, 9, 137, 73, 201, 41, 169, 105, 233, 25, 153, 89, 217, 57, 185, 121, 249, 5, 133, 69, 197, 37, 165, 101, 229, 21, 149, 85, 213, 53, 181, 117, 245, 13, 141, 77, 205, 45, 173, 109, 237, 29, 157, 93, 221, 61, 189, 125, 253, 3, 131, 67, 195, 35, 163, 99, 227, 19, 147, 83, 211, 51, 179, 115, 243, 11, 139, 75, 203, 43, 171, 107, 235, 27, 155, 91, 219, 59, 187, 123, 251, 7, 135, 71, 199, 39, 167, 103, 231, 23, 151, 87, 215, 55, 183, 119, 247, 15, 143, 79, 207, 47, 175, 111, 239, 31, 159, 95, 223, 63, 191, 127, 255]
 
 function to_block(a::FieldElement)
     # Always work with 128 bits (16 bytes)
@@ -162,6 +196,11 @@ function to_block(a::FieldElement)
     end
     
     return base64encode(bytes)
+end
+
+
+function get_bytes(a::FieldElement)
+    return base64decode(a.to_block())
 end
 
 

@@ -8,8 +8,16 @@ function encrypt_sea(key::Array{UInt8}, input::Array{UInt8})
     return encrypt("AES128", key, input) .⊻ SEA_CONST
 end
 
+function encrypt_sea(algorithm::String, key::Array{UInt8}, input::Array{UInt8})
+    return encrypt(algorithm, key, input) .⊻ SEA_CONST
+end
+
 function decrypt_sea(key::Array{UInt8}, input::Array{UInt8})
     return decrypt("AES128", key, input .⊻ SEA_CONST)
+end
+
+function decrypt_sea(algorithm::String, key::Array{UInt8}, input::Array{UInt8})
+    return decrypt(algorithm, key, input .⊻ SEA_CONST)
 end
 
 end
