@@ -55,8 +55,8 @@ func1(x) = int_to_semantic(x, "gcm")
 func1_xex(x) = int_to_semantic(x, "xex")
 
 # Optimized function 
-func2(x) = int_to_semantic(x, Val(:gcm))
-func2_xex(x) = int_to_semantic(x, Val(:xex))
+func2(x) = int_to_semantic_claude(x, "gcm")
+func2_xex(x) = int_to_semantic_claude(x, "xex")
 
 # Verify correctness for GCM
 for x in test_bytes[1:10]  # Test first 10 values

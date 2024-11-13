@@ -1,18 +1,16 @@
 
 module Galois_quick
+
+using ..SemanticTypes: Semantic, GCM, XEX
 using Base64
 
 import Base: +, *, ⊻, <<, >>, %, show, length
 
 struct FieldElement_quick
     value::UInt128
-    semantic::String
+    semantic::Semantic
 
-    # Inner constructor
-    function FieldElement_quick(value::UInt128, semantic::String, skip_mani::Bool=false)
-        if semantic ∉ ["gcm", "xex"]
-            throw(ArgumentError("Unknown semantic: $semantic"))
-        end
+    function FieldElement_quick(value::UInt128, semantic::Semantic, skip_mani::Bool=false)
         new(value, semantic)
     end
 end
@@ -36,28 +34,13 @@ get_bytes(a::FieldElement_quick) = base64decode(a.to_block())
 Base.:+(a::FieldElement_quick, b::FieldElement_quick) = FieldElement_quick(a.value ⊻ b.value, a.semantic)
 
 
-function int_to_semantic(x::UInt128, semantic::String)
-    value::UInt128 = 0
-    if semantic == "gcm"
-        x = (x << 64) | (x >> 64)                           # Swap 64-bit halves
-        x = ((x << 32) & 0xFFFFFFFF00000000FFFFFFFF00000000) | ((x >> 32) & 0x00000000FFFFFFFF00000000FFFFFFFF)
-        x = ((x << 16) & 0xFFFF0000FFFF0000FFFF0000FFFF0000) | ((x >> 16) & 0x0000FFFF0000FFFF0000FFFF0000FFFF)
-        x = ((x << 8)  & 0xFF00FF00FF00FF00FF00FF00FF00FF00) | ((x >> 8)  & 0x00FF00FF00FF00FF00FF00FF00FF00FF)
-        x = ((x << 4)  & 0xF0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0) | ((x >> 4)  & 0x0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F)
-        x = ((x << 2)  & 0xCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC) | ((x >> 2)  & 0x3333333333333333333333333333333333)
-        x = ((x << 1)  & 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA) | ((x >> 1)  & 0x5555555555555555555555555555555555)
-        value = x
-    elseif semantic == "xex"
-        x = (x << 64) | (x >> 64)                           # Swap 64-bit halves
-        x = ((x << 32) & 0xFFFFFFFF00000000FFFFFFFF00000000) | ((x >> 32) & 0x00000000FFFFFFFF00000000FFFFFFFF)
-        x = ((x << 16) & 0xFFFF0000FFFF0000FFFF0000FFFF0000) | ((x >> 16) & 0x0000FFFF0000FFFF0000FFFF0000FFFF)
-        x = ((x << 8)  & 0xFF00FF00FF00FF00FF00FF00FF00FF00) | ((x >> 8)  & 0x00FF00FF00FF00FF00FF00FF00FF00FF)
-        value = x
-    else
-        throw(ArgumentError("Unknown semantic: $semantic"))
-    end
 
-    return value
+function int_to_semantic(x::UInt128, semantic::Semantic)
+    if semantic == GCM
+        return bitreverse(x)
+    elseif semantic == XEX
+        return bswap(x)
+    end
 end
 
 
@@ -74,11 +57,11 @@ end
 
 
 
-function FieldElement_quick(x::UInt128, semantic::String)
+function FieldElement_quick(x::UInt128, semantic::Semantic)
     FieldElement_quick(int_to_semantic(x, semantic), semantic, true)
 end
 
-function FieldElement_quick(poly::Array{UInt8}, semantic::String)
+function FieldElement_quick(poly::Array{UInt8}, semantic::Semantic)
     aggregate::UInt128 = 0
     one::UInt128 = 1
     for i in poly
@@ -89,10 +72,10 @@ function FieldElement_quick(poly::Array{UInt8}, semantic::String)
     FieldElement_quick(aggregate, semantic, true)
 end
 
-function FieldElement_quick(base64::String, semantic::String)
+function FieldElement_quick(base64::String, semantic::Semantic)
     a_array = base64decode(base64)
     value::UInt128 = uint8_to_uint128(a_array)
-    FieldElement_quick(int_to_semantic(value, semantic), semantic)
+    FieldElement_quick(int_to_semantic(value, semantic), semantic, true)
 end
 
 
@@ -143,13 +126,11 @@ function to_block(a::FieldElement_quick)
     value::UInt128 = a.value
 
     
-    if a.semantic == "xex"
+    if a.semantic == XEX
         bytes = reinterpret(UInt8, [value])
-    elseif a.semantic == "gcm"
+    elseif a.semantic == GCM
         value = bitreverse(value)
         bytes = reverse!(reinterpret(UInt8, [value]))
-    else
-        throw(ArgumentError("Unknown semantic: $semantic"))
     end
     
     return base64encode(bytes)
