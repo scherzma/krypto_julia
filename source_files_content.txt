@@ -5,13 +5,17 @@ Directory Structure:
     📁 src/
         📁 algorithms/
             📄 gcm.jl (Content follows below)
+            📄 padding_oracle.jl (Content follows below)
             📄 sea128.jl (Content follows below)
             📄 xex_fde.jl (Content follows below)
         📁 math/
-            📄 galois.jl (Content follows below)
+            📄 galois.jl.bak
+            📄 galois_fast.jl (Content follows below)
+        📁 testing/
+            📄 performance.jl (Content follows below)
         📁 util/
-            📄 conversions.jl (Content follows below)
             📄 processor.jl (Content follows below)
+            📄 semantic_types.jl (Content follows below)
         📄 Krypto.jl (Content follows below)
     📄 kauma
     📄 Manifest.toml
@@ -45,8 +49,8 @@ function main()
         file = ARGS[1]
     end
     
-    jsonContent = JSON.parsefile(file)
-    process(jsonContent)
+    @time jsonContent = JSON.parsefile(file)
+    @time process(jsonContent)
 end
 
 
@@ -54,7 +58,7 @@ end
 main()
 
 
-#create_app(".", "MyAppCompiled",
+#create_app(".", "Krypto",
 #    precompile_execution_file="./kauma",
 #    force=true,
 #    filter_stdlibs=true,
@@ -83,13 +87,16 @@ File: src\algorithms\gcm.jl
 
 module GCM
 
-include("sea128.jl")
-include("../math/galois.jl")
 
+include("../util/semantic_types.jl")
+using .SemanticTypes
+
+include("sea128.jl")
+include("../math/galois_fast.jl")
 using Nettle
 using Base64
 using .Sea128: encrypt_sea, decrypt_sea
-using .Galois: FieldElement
+using .Galois_quick: FieldElement_quick
 
 
 arr_to_int(arr::Array{UInt8}) = reinterpret(UInt128, reverse(arr))[1]
@@ -100,14 +107,14 @@ function ghash(key::Array{UInt8}, nonce::Array{UInt8}, text::Array{UInt8}, ad::A
 
     enc_func = algorithm == "aes128" ? encrypt : encrypt_sea 
     auth_key = enc_func("aes128", key, zeros(UInt8, 16))
-    auth_key = FieldElement(arr_to_int(auth_key), "gcm")
+    auth_key = FieldElement_quick(arr_to_int(auth_key), SemanticTypes.GCM)
 
     len_block = vcat(
         reverse(reinterpret(UInt8, [length(ad) << 3])),
         reverse(reinterpret(UInt8, [length(text) << 3]))
     )
     
-    Y = FieldElement(UInt128(0), "gcm")
+    Y = FieldElement_quick(UInt128(0), SemanticTypes.GCM)
     data = [pad_array(ad); pad_array(text); len_block]
 
     for i in 1:16:(length(data) - 1)
@@ -153,6 +160,40 @@ function encrypt_gcm(key::Array{UInt8}, plaintext::Array{UInt8}, ad::Array{UInt8
 end
 
 end
+
+===========================================
+File: src\algorithms\padding_oracle.jl
+===========================================
+
+module PaddingOracle
+
+using Sockets 
+
+
+struct PaddingClient
+    connection::TCPSocket
+end
+
+function PaddingClient(hostname::String, port::Int)
+    client = connect(hostname, port)
+    return PaddingClient(client)
+end
+
+
+
+function send_to_server(a::PaddingClient, data::Array{UInt8})
+    write(a.connection, data)
+end
+
+
+function padding_attack(hostname::String, port::Int, iv::Array{UInt8}, ciphertext::Array{UInt8})
+    return "plaintext"
+end
+
+
+end
+
+
 
 ===========================================
 File: src\algorithms\sea128.jl
@@ -229,258 +270,150 @@ end
 end
 
 ===========================================
-File: src\math\galois.jl
+File: src\math\galois_fast.jl
 ===========================================
 
 
-module Galois
-using Nemo
+module Galois_quick
+
+using ..SemanticTypes: Semantic, GCM, XEX
 using Base64
 
-struct FieldElement
-    value::ZZRingElem
-    semantic::String
-    field::ZZRingElem
+import Base: +, *, ⊻, <<, >>, %, show, length
+
+struct FieldElement_quick
+    value::UInt128
+    semantic::Semantic
+
+    function FieldElement_quick(value::UInt128, semantic::Semantic, skip_mani::Bool=false)
+        new(value, semantic)
+    end
 end
+
+const GF128_MODULUS = UInt128(0x87)  # x^128 + x^7 + x^2 + x + 1
+const MASK_128 = UInt128(1) << 127
 
 const BIT_REVERSE_TABLE = UInt8[0, 128, 64, 192, 32, 160, 96, 224, 16, 144, 80, 208, 48, 176, 112, 240, 8, 136, 72, 200, 40, 168, 104, 232, 24, 152, 88, 216, 56, 184, 120, 248, 4, 132, 68, 196, 36, 164, 100, 228, 20, 148, 84, 212, 52, 180, 116, 244, 12, 140, 76, 204, 44, 172, 108, 236, 28, 156, 92, 220, 60, 188, 124, 252, 2, 130, 66, 194, 34, 162, 98, 226, 18, 146, 82, 210, 50, 178, 114, 242, 10, 138, 74, 202, 42, 170, 106, 234, 26, 154, 90, 218, 58, 186, 122, 250, 6, 134, 70, 198, 38, 166, 102, 230, 22, 150, 86, 214, 54, 182, 118, 246, 14, 142, 78, 206, 46, 174, 110, 238, 30, 158, 94, 222, 62, 190, 126, 254, 1, 129, 65, 193, 33, 161, 97, 225, 17, 145, 81, 209, 49, 177, 113, 241, 9, 137, 73, 201, 41, 169, 105, 233, 25, 153, 89, 217, 57, 185, 121, 249, 5, 133, 69, 197, 37, 165, 101, 229, 21, 149, 85, 213, 53, 181, 117, 245, 13, 141, 77, 205, 45, 173, 109, 237, 29, 157, 93, 221, 61, 189, 125, 253, 3, 131, 67, 195, 35, 163, 99, 227, 19, 147, 83, 211, 51, 179, 115, 243, 11, 139, 75, 203, 43, 171, 107, 235, 27, 155, 91, 219, 59, 187, 123, 251, 7, 135, 71, 199, 39, 167, 103, 231, 23, 151, 87, 215, 55, 183, 119, 247, 15, 143, 79, 207, 47, 175, 111, 239, 31, 159, 95, 223, 63, 191, 127, 255]
 
 
-FieldElement(value::Int, semantic::String) = FieldElement(ZZ(value), semantic, ZZ(0x100000000000000000000000000000087))
-#FieldElement(value::UInt128, semantic::String) = FieldElement(ZZ(value), semantic, ZZ(0x100000000000000000000000000000087))
-FieldElement(value::UInt128) = FieldElement(ZZRingElem(value), "XEX", ZZ(0x100000000000000000000000000000087))
-FieldElement(value::ZZRingElem, semantic::String) = FieldElement(value, semantic, ZZ(0x100000000000000000000000000000087))
+Base.:⊻(a::FieldElement_quick, b::FieldElement_quick) = FieldElement_quick(a.value ⊻ b.value, a.semantic)
+Base.:⊻(a::FieldElement_quick, b::UInt128) = FieldElement_quick(a.value ⊻ b, a.semantic)
+Base.:>>(a::FieldElement_quick, b::Int) = FieldElement_quick(a.value >> b, a.semantic)
+Base.:>>(a::FieldElement_quick, b::Int) = FieldElement_quick(a.value >> b, a.semantic)
+Base.:%(a::FieldElement_quick, b::UInt128) = FieldElement_quick(a.value % b, a.semantic)
+Base.:%(a::FieldElement_quick, b::FieldElement_quick) = FieldElement_quick(a.value % b.value, a.semantic)
+Base.show(io::IO, a::FieldElement_quick) = print(io, "FieldElement($(a.value), $(a.semantic))")
+bit_string(a::FieldElement_quick) = join(reverse(digits(a.value, base=2, pad=128)))
+to_polynomial(a::FieldElement_quick) = [x for x in 0:127 if (a.value >> x) % 2 == 1]
+get_bytes(a::FieldElement_quick) = base64decode(a.to_block())
+Base.:+(a::FieldElement_quick, b::FieldElement_quick) = FieldElement_quick(a.value ⊻ b.value, a.semantic)
 
 
-function FieldElement(x::UInt128, semantic::String)
 
-    value = ZZRingElem(0) # i&0b0000_0111 - i&0b1111_1000
-
-    if semantic == "gcm"
-        x = (x << 64) | (x >> 64)                           # Swap 64-bit halves
-        x = ((x << 32) & 0xFFFFFFFF00000000FFFFFFFF00000000) | ((x >> 32) & 0x00000000FFFFFFFF00000000FFFFFFFF)
-        x = ((x << 16) & 0xFFFF0000FFFF0000FFFF0000FFFF0000) | ((x >> 16) & 0x0000FFFF0000FFFF0000FFFF0000FFFF)
-        x = ((x << 8)  & 0xFF00FF00FF00FF00FF00FF00FF00FF00) | ((x >> 8)  & 0x00FF00FF00FF00FF00FF00FF00FF00FF)
-        x = ((x << 4)  & 0xF0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0) | ((x >> 4)  & 0x0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F)
-        x = ((x << 2)  & 0xCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC) | ((x >> 2)  & 0x3333333333333333333333333333333333)
-        x = ((x << 1)  & 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA) | ((x >> 1)  & 0x5555555555555555555555555555555555)
-        value = x
-    elseif semantic == "xex"
-        x = (x << 64) | (x >> 64)                           # Swap 64-bit halves
-        x = ((x << 32) & 0xFFFFFFFF00000000FFFFFFFF00000000) | ((x >> 32) & 0x00000000FFFFFFFF00000000FFFFFFFF)
-        x = ((x << 16) & 0xFFFF0000FFFF0000FFFF0000FFFF0000) | ((x >> 16) & 0x0000FFFF0000FFFF0000FFFF0000FFFF)
-        x = ((x << 8)  & 0xFF00FF00FF00FF00FF00FF00FF00FF00) | ((x >> 8)  & 0x00FF00FF00FF00FF00FF00FF00FF00FF)
-        value = x
-    else
-        throw(ArgumentError("Unknown semantic: $semantic"))
+function int_to_semantic(x::UInt128, semantic::Semantic)
+    if semantic == GCM
+        return bitreverse(x)
+    elseif semantic == XEX
+        return bswap(x)
     end
-
-    FieldElement(value, semantic, ZZ(0x100000000000000000000000000000087))
 end
 
 
-function FieldElement(poly::Array{UInt8}, semantic::String)
-    aggregate = ZZ(0)
-    one = ZZ(1)
+function uint8_to_uint128(bytes::Vector{UInt8})::UInt128
+    length(bytes) == 16 || throw(ArgumentError("Input must be exactly 16 bytes"))
+    @inbounds begin
+        result = (UInt128(bytes[1]) << 120) | (UInt128(bytes[2]) << 112) | (UInt128(bytes[3]) << 104) | (UInt128(bytes[4]) << 96) |
+                 (UInt128(bytes[5]) << 88)  | (UInt128(bytes[6]) << 80)  | (UInt128(bytes[7]) << 72)  | (UInt128(bytes[8]) << 64) |
+                 (UInt128(bytes[9]) << 56)  | (UInt128(bytes[10]) << 48) | (UInt128(bytes[11]) << 40) | (UInt128(bytes[12]) << 32) |
+                 (UInt128(bytes[13]) << 24) | (UInt128(bytes[14]) << 16) | (UInt128(bytes[15]) << 8)  | UInt128(bytes[16])
+    end
+    return result
+end
+
+
+
+function FieldElement_quick(x::UInt128, semantic::Semantic)
+    FieldElement_quick(int_to_semantic(x, semantic), semantic, true)
+end
+
+function FieldElement_quick(poly::Array{UInt8}, semantic::Semantic)
+    aggregate::UInt128 = 0
+    one::UInt128 = 1
     for i in poly
         if i < 128
-            aggregate |= (one << Int(i))
+            aggregate |= (one << i)
         end
     end
-    FieldElement(aggregate, semantic)
+    FieldElement_quick(aggregate, semantic, true)
 end
 
-
-function FieldElement(base64::String, semantic::String)
-
-    result::ZZRingElem = 0
+function FieldElement_quick(base64::String, semantic::Semantic)
     a_array = base64decode(base64)
-
-
-    if semantic == "xex"
-        for (i, byte) in enumerate(a_array)
-            result = result | ZZRingElem(byte) << (8 * (i-1))
-        end
-    elseif semantic == "gcm" # + i&0b0000_0111 - i&0b1111_1000
-        for (i, b) in enumerate(a_array)
-
-            b = BIT_REVERSE_TABLE[b+1]
-            
-            result = result | (ZZRingElem(b) << ((i-1) * 8))
-        end
-    end
-
-    return FieldElement(result, semantic)
-end
-
-import Base.:+
-function Base.:+(a::FieldElement, b::FieldElement)
-    if a.field != b.field
-        throw(ArgumentError("Cannot add elements from different fields"))
-    end
-    return FieldElement(a.value ⊻ b.value, a.semantic, a.field)
-end
-
-function Base.:+(a::FieldElement, b::Vector{UInt8})
-    value = a.value
-
-    if length(b) > 16 | length(b) < 16
-        throw(ArgumentError("Length of b must be 16"))
-    end
-
-    if a.semantic == "gcm"
-        for i in 1:length(b)
-            value ⊻= (ZZ(BIT_REVERSE_TABLE[b[i] + 1]) << ((i-1)*8))
-        end
-    elseif a.semantic == "xex"
-        for i in 1:length(b)
-            value ⊻= ZZ(b[i]) << (i)
-        end
-    else
-        throw(ArgumentError("Unknown semantic: $semantic"))
-    end
-
-    return FieldElement(value, a.semantic, a.field)
+    value::UInt128 = uint8_to_uint128(a_array)
+    FieldElement_quick(int_to_semantic(value, semantic), semantic, true)
 end
 
 
-import Base.:⊻
-function Base.:⊻(a::FieldElement, b::FieldElement)
-    return FieldElement(a.value ⊻ b.value, a.semantic, a.field)
-end
 
-function Base.:⊻(a::FieldElement, b::ZZRingElem)
-    return FieldElement(a.value ⊻ b, a.semantic, a.field)
-end
+function Base.:+(a::FieldElement_quick, b::Vector{UInt8})
 
+    length(b) == 16 || throw(ArgumentError("Input must be exactly 16 bytes"))
 
-import Base.:<<
-function Base.:<<(a::FieldElement, b::Int)
-    return FieldElement(a.value << b, a.semantic, a.field)
-end
+    value = uint8_to_uint128(b)
+    int_value = int_to_semantic(value, a.semantic)
 
-import Base.:>>
-function Base.:>>(a::FieldElement, b::Int)
-    return FieldElement(a.value >> b, a.semantic, a.field)
-end
-
-import Base.:%
-function Base.:%(a::FieldElement, b::FieldElement)
-    return FieldElement(a.value % b.value, a.semantic, a.field)
+    return FieldElement_quick(int_value ⊻ a.value, a.semantic, true)
 end
 
 
-# .length() returns the number of bits in the value
-import Base.length
-Base.length(a::FieldElement) = nbits(a.value)
-
-import Base.:*
-function Base.:*(a::FieldElement, b::FieldElement)
-    if a.field != b.field
-        throw(ArgumentError("Cannot multiply elements from different fields"))
-    end
-
-    aggregate = ZZRingElem(0)
-
+function Base.:*(a::FieldElement_quick, b::FieldElement_quick)
+    aggregate = UInt128(0)
     tmp_a = a.value
     tmp_b = b.value
 
-    highest_field_bit = ZZRingElem(1) << (nbits(a.field) - 1)
 
-
-    if (tmp_b) % 2 == 1
+    if (tmp_b & UInt128(1)) == 1
         aggregate ⊻= tmp_a
     end
 
-    for i in 1:length(b)
+    prev_high_bit = UInt128(0)
+
+    for i in 1:128
+        prev_high_bit = (tmp_a & (UInt128(1) << 127)) != 0
         tmp_a <<= 1
         
-        if (tmp_a & highest_field_bit) != 0
-            tmp_a ⊻= a.field
+        if prev_high_bit
+            tmp_a ⊻= GF128_MODULUS
         end
         
-        if (tmp_b >> i) % 2 == 1
+        if (tmp_b >> i) & UInt128(1) == 1
             aggregate ⊻= tmp_a
         end
 
     end
     
-    return FieldElement(aggregate, a.semantic, a.field)
+    return FieldElement_quick(aggregate, a.semantic, true)
 end
 
 
+function to_block(a::FieldElement_quick)
+    bytes = Vector{UInt8}(undef, 16)
+    value::UInt128 = a.value
 
-import Base: iterate, eltype, length
-function Base.iterate(fe::FieldElement)
-    # Start with first byte (index 0)
-    return iterate(fe, 0)
-end
-
-
-function Base.iterate(fe::FieldElement, state)
-    # Stop after 16 bytes (128 bits)
-    if state >= 16
-        return nothing
-    end
     
-    # Extract the current byte using bit shifting and masking
-    mask = ZZ(0xFF)
-    shift = state * 8
-    
-    byte_val = UInt8((fe.value >> shift) & mask)
-    return (byte_val, state + 1)
-end
-
-
-import Base.show
-function Base.show(io::IO, a::FieldElement)
-    print(io, "FieldElement($(a.value), $(a.field))")
-end
-
-function bit_string(a::FieldElement)
-    return join(reverse(digits(a.value, base=2, pad=128)))
-end
-
-function to_polynomial(a::FieldElement)
-    return [x for x in 0:127 if (a.value >> x) % 2 == 1] 
-end
-
-
-function to_block(a::FieldElement)
-    # Always work with 128 bits (16 bytes)
-    BLOCK_SIZE = 16
-    bytes = Vector{UInt8}(undef, BLOCK_SIZE)
-    value = a.value
-    
-    mask = ZZ(0xFF)
-    
-    if a.semantic == "xex"
-        for i in 0:(BLOCK_SIZE-1)
-            shift = i * 8
-            byte_val = UInt8((value >> shift) & mask)
-            bytes[i + 1] = byte_val
-        end
-    elseif a.semantic == "gcm"
-        for i in 0:(BLOCK_SIZE-1)
-            shift = i * 8
-            b = UInt8((value >> shift) & mask)
-            bytes[i + 1] = BIT_REVERSE_TABLE[b + 1]
-        end
-    else
-        throw(ArgumentError("Unknown semantic: $semantic"))
+    if a.semantic == XEX
+        bytes = reinterpret(UInt8, [value])
+    elseif a.semantic == GCM
+        value = bitreverse(value)
+        bytes = reverse!(reinterpret(UInt8, [value]))
     end
     
     return base64encode(bytes)
 end
 
 
-function get_bytes(a::FieldElement)
-    return base64decode(a.to_block())
-end
-
-
 import Base: getproperty
-function getproperty(gf::FieldElement, sym::Symbol)
+function getproperty(gf::FieldElement_quick, sym::Symbol)
     if sym === :bit_string
         return () -> bit_string(gf)
     end
@@ -501,37 +434,86 @@ end
 
 
 ===========================================
-File: src\util\conversions.jl
+File: src\testing\performance.jl
 ===========================================
 
+using BenchmarkTools
 
-
-module Conversions
-using Nemo
-using Base64
-
-function base64_to_Nemo(base64::String, semantic::String)
-
-    result::ZZRingElem = 0
-    a_array = base64decode(base64)
-
-    if semantic == "xex"
-        reverse!(a_array)
-        for byte in a_array
-            result = result << 8  # Shift left by 8 bits
-            result = result | ZZ(byte)  # OR with current byte
-        end
-    elseif semantic == "gcm"
-        for byte in a_array
-            result = result << 8  # Shift left by 8 bits
-            result = result | ZZ(byte)  # OR with current byte
-        end
+# Original function
+function int_to_semantic(x::UInt128, semantic::String)
+    value::UInt128 = 0
+    if semantic == "gcm"
+        x = (x << 64) | (x >> 64)                           # Swap 64-bit halves
+        x = ((x << 32) & 0xFFFFFFFF00000000FFFFFFFF00000000) | ((x >> 32) & 0x00000000FFFFFFFF00000000FFFFFFFF)
+        x = ((x << 16) & 0xFFFF0000FFFF0000FFFF0000FFFF0000) | ((x >> 16) & 0x0000FFFF0000FFFF0000FFFF0000FFFF)
+        x = ((x << 8)  & 0xFF00FF00FF00FF00FF00FF00FF00FF00) | ((x >> 8)  & 0x00FF00FF00FF00FF00FF00FF00FF00FF)
+        x = ((x << 4)  & 0xF0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0) | ((x >> 4)  & 0x0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F)
+        x = ((x << 2)  & 0xCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC) | ((x >> 2)  & 0x3333333333333333333333333333333333)
+        x = ((x << 1)  & 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA) | ((x >> 1)  & 0x5555555555555555555555555555555555)
+        value = x
+    elseif semantic == "xex"
+        x = (x << 64) | (x >> 64)                           # Swap 64-bit halves
+        x = ((x << 32) & 0xFFFFFFFF00000000FFFFFFFF00000000) | ((x >> 32) & 0x00000000FFFFFFFF00000000FFFFFFFF)
+        x = ((x << 16) & 0xFFFF0000FFFF0000FFFF0000FFFF0000) | ((x >> 16) & 0x0000FFFF0000FFFF0000FFFF0000FFFF)
+        x = ((x << 8)  & 0xFF00FF00FF00FF00FF00FF00FF00FF00) | ((x >> 8)  & 0x00FF00FF00FF00FF00FF00FF00FF00FF)
+        value = x
+    else
+        throw(ArgumentError("Unknown semantic: $semantic"))
     end
 
-    return result
+    return value
 end
 
+@enum Semantic GCM XEX
+# XEX case - just byte reversal
+function int_to_semantic(x::UInt128, ::Val{:xex})
+    return bswap(x)
 end
+
+# GCM case - bit reversal 
+function int_to_semantic(x::UInt128, ::Val{:gcm})
+    return bitreverse(x)
+end
+
+# Wrapper function for backward compatibility if needed
+function int_to_semantic(x::UInt128, semantic::String)
+    if semantic == "gcm"
+        return int_to_semantic(x, Val(:gcm))
+    elseif semantic == "xex"
+        return int_to_semantic(x, Val(:xex))
+    else
+        throw(ArgumentError("Unknown semantic: $semantic"))
+    end
+end
+
+
+test_bytes = rand(UInt128, 1000)
+
+# Original function
+func1(x) = int_to_semantic(x, "gcm")
+func1_xex(x) = int_to_semantic(x, "xex")
+
+# Optimized function 
+func2(x) = int_to_semantic_claude(x, "gcm")
+func2_xex(x) = int_to_semantic_claude(x, "xex")
+
+# Verify correctness for GCM
+for x in test_bytes[1:10]  # Test first 10 values
+    @assert func1(x) == func2(x) "Mismatch in GCM mode for value: $x"
+end
+
+# Verify correctness for XEX
+for x in test_bytes[1:10]  # Test first 10 values
+    @assert func1_xex(x) == func2_xex(x) "Mismatch in XEX mode for value: $x"
+end
+
+println("GCM mode benchmarks:")
+@btime func1($(test_bytes[1]))        # Original GCM function
+@btime func2($(test_bytes[1]))        # Optimized GCM function
+
+println("\nXEX mode benchmarks:")
+@btime func1_xex($(test_bytes[1]))    # Original XEX function
+@btime func2_xex($(test_bytes[1]))    # Optimized XEX function
 
 ===========================================
 File: src\util\processor.jl
@@ -542,13 +524,16 @@ File: src\util\processor.jl
 module Processing
 using JSON
 using Base64
-include("../math/galois.jl")
-include("conversions.jl")
+
+include("../util/semantic_types.jl")
+using .SemanticTypes: Semantic, from_string
+include("../math/galois_fast.jl")
 include("../algorithms/sea128.jl")
 include("../algorithms/xex_fde.jl")
 include("../algorithms/gcm.jl")
-using .Galois: FieldElement
-using .Conversions: base64_to_Nemo
+include("../algorithms/padding_oracle.jl")
+using .PaddingOracle: PaddingClient, send_to_server, padding_attack
+using .Galois_quick: FieldElement_quick
 using .Sea128: encrypt_sea, decrypt_sea
 using .FDE: encrypt_fde, decrypt_fde
 using .GCM: encrypt_gcm, decrypt_gcm
@@ -564,28 +549,28 @@ end
 
 function poly2block(jsonContent::Dict)
     coefficients::Array{UInt8} = jsonContent["coefficients"]
-    semantic::String = jsonContent["semantic"]
-    gf = FieldElement(coefficients, semantic)
+    semantic = from_string(jsonContent["semantic"])
+    gf = FieldElement_quick(coefficients, semantic)
     return gf.to_block()
 end
 
 function block2poly(jsonContent::Dict)
-    semantic::String = jsonContent["semantic"]
+    semantic = from_string(jsonContent["semantic"])
     block::String = jsonContent["block"]
 
-    gf = FieldElement(block, semantic)
+    gf = FieldElement_quick(block, semantic)
 
     result = gf.to_polynomial()
     return result
 end
 
 function gfmul(jsonContent::Dict)
-    semantic::String = jsonContent["semantic"]
+    semantic = from_string(jsonContent["semantic"])
     a::String = jsonContent["a"]
     b::String = jsonContent["b"]
 
-    gf_a = FieldElement(a, semantic)
-    gf_b = FieldElement(b, semantic)
+    gf_a = FieldElement_quick(a, semantic)
+    gf_b = FieldElement_quick(b, semantic)
 
     product = gf_a * gf_b
     return product.to_block()
@@ -668,7 +653,11 @@ function gcm_encrypt(jsonContent::Dict)
 end
 
 function padding_oracle_chaggpt(jsonContent::Dict)
-    return "plaintext"
+    hostname::String = jsonContent["hostname"]
+    port::Int = jsonContent["port"]
+    iv::Array{UInt8} = base64decode(jsonContent["iv"])
+    ciphertext::Array{UInt8} = base64decode(jsonContent["ciphertext"])
+    return padding_attack(hostname, port, iv, ciphertext)
 end
 
 
@@ -712,7 +701,21 @@ function process(jsonContent::Dict)
         result_testcases[key] = json_result
     end
 
-    println(JSON.json(result_testcases, 1))
+    println(JSON.json(Dict("testcases" => result_testcases)))
 
 end
+end
+
+===========================================
+File: src\util\semantic_types.jl
+===========================================
+
+module SemanticTypes
+@enum Semantic GCM XEX
+
+function from_string(s::String)::Semantic
+    return s == "gcm" ? GCM : XEX
+end
+
+export Semantic, GCM, XEX, from_string
 end
