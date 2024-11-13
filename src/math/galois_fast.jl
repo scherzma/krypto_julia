@@ -1,0 +1,188 @@
+
+module Galois_quick
+using Base64
+
+import Base: +, *, ⊻, <<, >>, %, show, length
+
+struct FieldElement_quick
+    value::UInt128
+    semantic::String
+
+    # Inner constructor
+    function FieldElement_quick(value::UInt128, semantic::String, skip_mani::Bool=false)
+        if semantic ∉ ["gcm", "xex"]
+            throw(ArgumentError("Unknown semantic: $semantic"))
+        end
+        new(value, semantic)
+    end
+end
+
+const GF128_MODULUS = UInt128(0x87)  # x^128 + x^7 + x^2 + x + 1
+const MASK_128 = UInt128(1) << 127
+
+const BIT_REVERSE_TABLE = UInt8[0, 128, 64, 192, 32, 160, 96, 224, 16, 144, 80, 208, 48, 176, 112, 240, 8, 136, 72, 200, 40, 168, 104, 232, 24, 152, 88, 216, 56, 184, 120, 248, 4, 132, 68, 196, 36, 164, 100, 228, 20, 148, 84, 212, 52, 180, 116, 244, 12, 140, 76, 204, 44, 172, 108, 236, 28, 156, 92, 220, 60, 188, 124, 252, 2, 130, 66, 194, 34, 162, 98, 226, 18, 146, 82, 210, 50, 178, 114, 242, 10, 138, 74, 202, 42, 170, 106, 234, 26, 154, 90, 218, 58, 186, 122, 250, 6, 134, 70, 198, 38, 166, 102, 230, 22, 150, 86, 214, 54, 182, 118, 246, 14, 142, 78, 206, 46, 174, 110, 238, 30, 158, 94, 222, 62, 190, 126, 254, 1, 129, 65, 193, 33, 161, 97, 225, 17, 145, 81, 209, 49, 177, 113, 241, 9, 137, 73, 201, 41, 169, 105, 233, 25, 153, 89, 217, 57, 185, 121, 249, 5, 133, 69, 197, 37, 165, 101, 229, 21, 149, 85, 213, 53, 181, 117, 245, 13, 141, 77, 205, 45, 173, 109, 237, 29, 157, 93, 221, 61, 189, 125, 253, 3, 131, 67, 195, 35, 163, 99, 227, 19, 147, 83, 211, 51, 179, 115, 243, 11, 139, 75, 203, 43, 171, 107, 235, 27, 155, 91, 219, 59, 187, 123, 251, 7, 135, 71, 199, 39, 167, 103, 231, 23, 151, 87, 215, 55, 183, 119, 247, 15, 143, 79, 207, 47, 175, 111, 239, 31, 159, 95, 223, 63, 191, 127, 255]
+
+
+Base.:⊻(a::FieldElement_quick, b::FieldElement_quick) = FieldElement_quick(a.value ⊻ b.value, a.semantic)
+Base.:⊻(a::FieldElement_quick, b::UInt128) = FieldElement_quick(a.value ⊻ b, a.semantic)
+Base.:>>(a::FieldElement_quick, b::Int) = FieldElement_quick(a.value >> b, a.semantic)
+Base.:>>(a::FieldElement_quick, b::Int) = FieldElement_quick(a.value >> b, a.semantic)
+Base.:%(a::FieldElement_quick, b::UInt128) = FieldElement_quick(a.value % b, a.semantic)
+Base.:%(a::FieldElement_quick, b::FieldElement_quick) = FieldElement_quick(a.value % b.value, a.semantic)
+Base.show(io::IO, a::FieldElement_quick) = print(io, "FieldElement($(a.value), $(a.semantic))")
+bit_string(a::FieldElement_quick) = join(reverse(digits(a.value, base=2, pad=128)))
+to_polynomial(a::FieldElement_quick) = [x for x in 0:127 if (a.value >> x) % 2 == 1]
+get_bytes(a::FieldElement_quick) = base64decode(a.to_block())
+Base.:+(a::FieldElement_quick, b::FieldElement_quick) = FieldElement_quick(a.value ⊻ b.value, a.semantic)
+
+
+function FieldElement_quick(x::UInt128, semantic::String)
+    value::UInt128 = 0
+    if semantic == "gcm"
+        x = (x << 64) | (x >> 64)                           # Swap 64-bit halves
+        x = ((x << 32) & 0xFFFFFFFF00000000FFFFFFFF00000000) | ((x >> 32) & 0x00000000FFFFFFFF00000000FFFFFFFF)
+        x = ((x << 16) & 0xFFFF0000FFFF0000FFFF0000FFFF0000) | ((x >> 16) & 0x0000FFFF0000FFFF0000FFFF0000FFFF)
+        x = ((x << 8)  & 0xFF00FF00FF00FF00FF00FF00FF00FF00) | ((x >> 8)  & 0x00FF00FF00FF00FF00FF00FF00FF00FF)
+        x = ((x << 4)  & 0xF0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0) | ((x >> 4)  & 0x0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F)
+        x = ((x << 2)  & 0xCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC) | ((x >> 2)  & 0x3333333333333333333333333333333333)
+        x = ((x << 1)  & 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA) | ((x >> 1)  & 0x5555555555555555555555555555555555)
+        value = x
+    elseif semantic == "xex"
+        x = (x << 64) | (x >> 64)                           # Swap 64-bit halves
+        x = ((x << 32) & 0xFFFFFFFF00000000FFFFFFFF00000000) | ((x >> 32) & 0x00000000FFFFFFFF00000000FFFFFFFF)
+        x = ((x << 16) & 0xFFFF0000FFFF0000FFFF0000FFFF0000) | ((x >> 16) & 0x0000FFFF0000FFFF0000FFFF0000FFFF)
+        x = ((x << 8)  & 0xFF00FF00FF00FF00FF00FF00FF00FF00) | ((x >> 8)  & 0x00FF00FF00FF00FF00FF00FF00FF00FF)
+        value = x
+    else
+        throw(ArgumentError("Unknown semantic: $semantic"))
+    end
+
+    FieldElement_quick(value, semantic, true)
+end
+
+function FieldElement_quick(poly::Array{UInt8}, semantic::String)
+    aggregate::UInt128 = 0
+    one::UInt128 = 1
+    for i in poly
+        if i < 128
+            aggregate |= (one << i)
+        end
+    end
+    FieldElement_quick(aggregate, semantic, true)
+end
+
+function FieldElement_quick(base64::String, semantic::String)
+
+    result::UInt128 = 0
+    a_array = base64decode(base64)
+
+
+    if semantic == "xex"
+        for (i, byte) in enumerate(a_array)
+            result = result | UInt128(byte) << ((i-1) << 3)
+        end
+    elseif semantic == "gcm" # + i&0b0000_0111 - i&0b1111_1000
+        for (i, b) in enumerate(a_array)
+            b = BIT_REVERSE_TABLE[b+1]
+            result = result | (UInt128(b) << ((i-1) << 3))
+        end
+    end
+
+    FieldElement_quick(result, semantic, true)
+end
+
+
+
+function Base.:+(a::FieldElement_quick, b::Vector{UInt8})
+
+    if length(b) > 16 | length(b) < 16
+        throw(ArgumentError("Length of b must be 16"))
+    end
+
+    result::UInt128 = a.value
+
+    if a.semantic == "gcm"
+        for i in 1:length(b)
+            result ⊻= (UInt128(BIT_REVERSE_TABLE[b[i] + 1]) << ((i-1) << 3))
+        end
+    elseif a.semantic == "xex"
+        for i in 1:length(b)
+            result ⊻= UInt128(b[i]) << (i)
+        end
+    else
+        throw(ArgumentError("Unknown semantic: $semantic"))
+    end
+
+    return FieldElement_quick(result, a.semantic, true)
+end
+
+
+function Base.:*(a::FieldElement_quick, b::FieldElement_quick)
+    aggregate = UInt128(0)
+    tmp_a = a.value
+    tmp_b = b.value
+
+
+    if (tmp_b & UInt128(1)) == 1
+        aggregate ⊻= tmp_a
+    end
+
+    prev_high_bit = UInt128(0)
+
+    for i in 1:128
+
+        prev_high_bit = (tmp_a & (UInt128(1) << 127)) != 0
+
+        tmp_a <<= 1
+        
+        if prev_high_bit
+            tmp_a ⊻= GF128_MODULUS
+        end
+        
+        if (tmp_b >> i) & UInt128(1) == 1
+            aggregate ⊻= tmp_a
+        end
+
+    end
+    
+    return FieldElement_quick(aggregate, a.semantic, true)
+end
+
+
+function to_block(a::FieldElement_quick)
+    bytes = Vector{UInt8}(undef, 16)
+    value::UInt128 = a.value
+
+    
+    if a.semantic == "xex"
+        bytes = reinterpret(UInt8, [value])
+    elseif a.semantic == "gcm"
+        value = bitreverse(value)
+        bytes = reverse!(reinterpret(UInt8, [value]))
+    else
+        throw(ArgumentError("Unknown semantic: $semantic"))
+    end
+    
+    return base64encode(bytes)
+end
+
+
+import Base: getproperty
+function getproperty(gf::FieldElement_quick, sym::Symbol)
+    if sym === :bit_string
+        return () -> bit_string(gf)
+    end
+    if sym === :to_block
+        return () -> to_block(gf)
+    end
+    if sym === :to_polynomial
+        return () -> to_polynomial(gf)
+    end
+    return getfield(gf, sym)
+end
+
+
+end
+
+
+

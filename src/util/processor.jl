@@ -3,16 +3,15 @@
 module Processing
 using JSON
 using Base64
-include("../math/galois.jl")
-include("conversions.jl")
+include("../math/galois_fast.jl")
 include("../algorithms/sea128.jl")
 include("../algorithms/xex_fde.jl")
 include("../algorithms/gcm.jl")
-using .Galois: FieldElement
-using .Conversions: base64_to_Nemo
+using .Galois_quick: FieldElement_quick
 using .Sea128: encrypt_sea, decrypt_sea
 using .FDE: encrypt_fde, decrypt_fde
 using .GCM: encrypt_gcm, decrypt_gcm
+
 
 
 function add_numbers(jsonContent::Dict)
@@ -26,7 +25,7 @@ end
 function poly2block(jsonContent::Dict)
     coefficients::Array{UInt8} = jsonContent["coefficients"]
     semantic::String = jsonContent["semantic"]
-    gf = FieldElement(coefficients, semantic)
+    gf = FieldElement_quick(coefficients, semantic)
     return gf.to_block()
 end
 
@@ -34,7 +33,7 @@ function block2poly(jsonContent::Dict)
     semantic::String = jsonContent["semantic"]
     block::String = jsonContent["block"]
 
-    gf = FieldElement(block, semantic)
+    gf = FieldElement_quick(block, semantic)
 
     result = gf.to_polynomial()
     return result
@@ -45,8 +44,8 @@ function gfmul(jsonContent::Dict)
     a::String = jsonContent["a"]
     b::String = jsonContent["b"]
 
-    gf_a = FieldElement(a, semantic)
-    gf_b = FieldElement(b, semantic)
+    gf_a = FieldElement_quick(a, semantic)
+    gf_b = FieldElement_quick(b, semantic)
 
     product = gf_a * gf_b
     return product.to_block()
