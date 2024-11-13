@@ -7,10 +7,12 @@ include("../math/galois.jl")
 include("conversions.jl")
 include("../algorithms/sea128.jl")
 include("../algorithms/xex_fde.jl")
+include("../algorithms/gcm.jl")
 using .Galois: FieldElement
 using .Conversions: base64_to_Nemo
 using .Sea128: encrypt_sea, decrypt_sea
 using .FDE: encrypt_fde, decrypt_fde
+using .GCM: encrypt_gcm, decrypt_gcm
 
 
 function add_numbers(jsonContent::Dict)
@@ -86,21 +88,47 @@ function xex(jsonContent::Dict)
     return base64encode(result_bytes)
 end
 
-function gcm_encrypt(jsonContent::Dict)
-    println("gcm_encrypt")
-    println("jsonContent: ", jsonContent)
-    return ("ciphertext", "234234234234324", "H", "MAC")
+function gcm_crypt(jsonContent::Dict, mode::String)
+    algorithm::String = jsonContent["algorithm"]
+    key::String = jsonContent["key"]
+    ad::String = jsonContent["ad"]
+    nonce::String = jsonContent["nonce"]
+
+    text::String = ""
+    if mode == "encrypt"
+        text = jsonContent["plaintext"]
+    elseif mode == "decrypt"
+        text = jsonContent["ciphertext"]
+        tag::String = jsonContent["tag"]
+    end
+
+    key_bytes = base64decode(key)
+    ad_bytes = base64decode(ad)
+    nonce_bytes = base64decode(nonce)
+    text_bytes = base64decode(text)
+
+    if mode == "encrypt"
+        result = encrypt_gcm(key_bytes, text_bytes, ad_bytes, nonce_bytes, algorithm)
+        return base64encode(result[1]), result[2].to_block(), base64encode(result[3]), result[4].to_block()
+    elseif mode == "decrypt"
+        result = decrypt_gcm(key_bytes, text_bytes, ad_bytes, nonce_bytes, algorithm)
+        return result[2].to_block() == tag, base64encode(result[1])
+    end
+
+    return result
 end
 
 function gcm_decrypt(jsonContent::Dict)
-    println("gcm_decrypt")
-    println("jsonContent: ", jsonContent)
-    return "plaintext"
+    mode::String = "decrypt"
+    return gcm_crypt(jsonContent, mode)
+end
+
+function gcm_encrypt(jsonContent::Dict)
+    mode::String = "encrypt"
+    return gcm_crypt(jsonContent, mode)
 end
 
 function padding_oracle_chaggpt(jsonContent::Dict)
-    println("padding_oracle_chaggpt")
-    println("jsonContent: ", jsonContent)
     return "plaintext"
 end
 
@@ -113,8 +141,8 @@ ACTIONS::Dict{String, Vector{Any}} = Dict(
     "gfmul" => [gfmul, ["polynomial"]],
     "sea128" => [sea128, ["ciphertext"]],
     "xex" => [xex, ["ciphertext"]],
-    "gcm_encrypt" => [gcm_encrypt, ["ciphertext", "asdf", "H", "MAC"]],
-    "gcm_decrypt" => [gcm_decrypt, ["plaintext"]],
+    "gcm_encrypt" => [gcm_encrypt, ["ciphertext", "tag", "L", "H"]],
+    "gcm_decrypt" => [gcm_decrypt, ["authentic", "plaintext"]],
     "padding_oracle" => [padding_oracle_chaggpt, ["plaintext"]],
 )
 

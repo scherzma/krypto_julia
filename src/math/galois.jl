@@ -13,9 +13,37 @@ const BIT_REVERSE_TABLE = UInt8[0, 128, 64, 192, 32, 160, 96, 224, 16, 144, 80, 
 
 
 FieldElement(value::Int, semantic::String) = FieldElement(ZZ(value), semantic, ZZ(0x100000000000000000000000000000087))
-FieldElement(value::UInt128, semantic::String) = FieldElement(ZZ(value), semantic, ZZ(0x100000000000000000000000000000087))
+#FieldElement(value::UInt128, semantic::String) = FieldElement(ZZ(value), semantic, ZZ(0x100000000000000000000000000000087))
 FieldElement(value::UInt128) = FieldElement(ZZRingElem(value), "XEX", ZZ(0x100000000000000000000000000000087))
 FieldElement(value::ZZRingElem, semantic::String) = FieldElement(value, semantic, ZZ(0x100000000000000000000000000000087))
+
+
+function FieldElement(x::UInt128, semantic::String)
+
+    value = ZZRingElem(0) # i&0b0000_0111 - i&0b1111_1000
+
+    if semantic == "gcm"
+        x = (x << 64) | (x >> 64)                           # Swap 64-bit halves
+        x = ((x << 32) & 0xFFFFFFFF00000000FFFFFFFF00000000) | ((x >> 32) & 0x00000000FFFFFFFF00000000FFFFFFFF)
+        x = ((x << 16) & 0xFFFF0000FFFF0000FFFF0000FFFF0000) | ((x >> 16) & 0x0000FFFF0000FFFF0000FFFF0000FFFF)
+        x = ((x << 8)  & 0xFF00FF00FF00FF00FF00FF00FF00FF00) | ((x >> 8)  & 0x00FF00FF00FF00FF00FF00FF00FF00FF)
+        x = ((x << 4)  & 0xF0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0) | ((x >> 4)  & 0x0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F)
+        x = ((x << 2)  & 0xCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC) | ((x >> 2)  & 0x3333333333333333333333333333333333)
+        x = ((x << 1)  & 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA) | ((x >> 1)  & 0x5555555555555555555555555555555555)
+        value = x
+    elseif semantic == "xex"
+        x = (x << 64) | (x >> 64)                           # Swap 64-bit halves
+        x = ((x << 32) & 0xFFFFFFFF00000000FFFFFFFF00000000) | ((x >> 32) & 0x00000000FFFFFFFF00000000FFFFFFFF)
+        x = ((x << 16) & 0xFFFF0000FFFF0000FFFF0000FFFF0000) | ((x >> 16) & 0x0000FFFF0000FFFF0000FFFF0000FFFF)
+        x = ((x << 8)  & 0xFF00FF00FF00FF00FF00FF00FF00FF00) | ((x >> 8)  & 0x00FF00FF00FF00FF00FF00FF00FF00FF)
+        value = x
+    else
+        throw(ArgumentError("Unknown semantic: $semantic"))
+    end
+
+    FieldElement(value, semantic, ZZ(0x100000000000000000000000000000087))
+end
+
 
 function FieldElement(poly::Array{UInt8}, semantic::String)
     aggregate = ZZ(0)
@@ -60,15 +88,27 @@ function Base.:+(a::FieldElement, b::FieldElement)
 end
 
 function Base.:+(a::FieldElement, b::Vector{UInt8})
-
-    println("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
     value = a.value
 
-    for i in 1:length(b)
-        value = value ⊻ (ZZ(b[i]) << (8 * (i-1)))
+    if length(b) > 16 | length(b) < 16
+        throw(ArgumentError("Length of b must be 16"))
     end
-    return FieldElement(value+0x0103924afa, a.semantic, a.field)
+
+    if a.semantic == "gcm"
+        for i in 1:length(b)
+            value ⊻= (ZZ(BIT_REVERSE_TABLE[b[i] + 1]) << ((i-1)*8))
+        end
+    elseif a.semantic == "xex"
+        for i in 1:length(b)
+            value ⊻= ZZ(b[i]) << (i)
+        end
+    else
+        throw(ArgumentError("Unknown semantic: $semantic"))
+    end
+
+    return FieldElement(value, a.semantic, a.field)
 end
+
 
 import Base.:⊻
 function Base.:⊻(a::FieldElement, b::FieldElement)
@@ -141,6 +181,7 @@ function Base.iterate(fe::FieldElement)
     # Start with first byte (index 0)
     return iterate(fe, 0)
 end
+
 
 function Base.iterate(fe::FieldElement, state)
     # Stop after 16 bytes (128 bits)
