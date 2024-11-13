@@ -10,6 +10,8 @@ include("../math/galois_fast.jl")
 include("../algorithms/sea128.jl")
 include("../algorithms/xex_fde.jl")
 include("../algorithms/gcm.jl")
+include("../algorithms/padding_oracle.jl")
+using .PaddingOracle: PaddingClient, send_to_server, padding_attack
 using .Galois_quick: FieldElement_quick
 using .Sea128: encrypt_sea, decrypt_sea
 using .FDE: encrypt_fde, decrypt_fde
@@ -130,7 +132,11 @@ function gcm_encrypt(jsonContent::Dict)
 end
 
 function padding_oracle_chaggpt(jsonContent::Dict)
-    return "plaintext"
+    hostname::String = jsonContent["hostname"]
+    port::Int = jsonContent["port"]
+    iv::Array{UInt8} = base64decode(jsonContent["iv"])
+    ciphertext::Array{UInt8} = base64decode(jsonContent["ciphertext"])
+    return padding_attack(hostname, port, iv, ciphertext)
 end
 
 
@@ -174,7 +180,7 @@ function process(jsonContent::Dict)
         result_testcases[key] = json_result
     end
 
-    println(JSON.json(result_testcases, 1))
+    println(JSON.json(Dict("testcases" => result_testcases)))
 
 end
 end
