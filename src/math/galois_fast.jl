@@ -36,7 +36,7 @@ get_bytes(a::FieldElement_quick) = base64decode(a.to_block())
 Base.:+(a::FieldElement_quick, b::FieldElement_quick) = FieldElement_quick(a.value ⊻ b.value, a.semantic)
 
 
-function FieldElement_quick(x::UInt128, semantic::String)
+function int_to_semantic(x::UInt128, semantic::String)
     value::UInt128 = 0
     if semantic == "gcm"
         x = (x << 64) | (x >> 64)                           # Swap 64-bit halves
@@ -57,7 +57,25 @@ function FieldElement_quick(x::UInt128, semantic::String)
         throw(ArgumentError("Unknown semantic: $semantic"))
     end
 
-    FieldElement_quick(value, semantic, true)
+    return value
+end
+
+
+function uint8_to_uint128(bytes::Vector{UInt8})::UInt128
+    length(bytes) == 16 || throw(ArgumentError("Input must be exactly 16 bytes"))
+    @inbounds begin
+        result = (UInt128(bytes[1]) << 120) | (UInt128(bytes[2]) << 112) | (UInt128(bytes[3]) << 104) | (UInt128(bytes[4]) << 96) |
+                 (UInt128(bytes[5]) << 88)  | (UInt128(bytes[6]) << 80)  | (UInt128(bytes[7]) << 72)  | (UInt128(bytes[8]) << 64) |
+                 (UInt128(bytes[9]) << 56)  | (UInt128(bytes[10]) << 48) | (UInt128(bytes[11]) << 40) | (UInt128(bytes[12]) << 32) |
+                 (UInt128(bytes[13]) << 24) | (UInt128(bytes[14]) << 16) | (UInt128(bytes[15]) << 8)  | UInt128(bytes[16])
+    end
+    return result
+end
+
+
+
+function FieldElement_quick(x::UInt128, semantic::String)
+    FieldElement_quick(int_to_semantic(x, semantic), semantic, true)
 end
 
 function FieldElement_quick(poly::Array{UInt8}, semantic::String)
@@ -72,48 +90,21 @@ function FieldElement_quick(poly::Array{UInt8}, semantic::String)
 end
 
 function FieldElement_quick(base64::String, semantic::String)
-
-    result::UInt128 = 0
     a_array = base64decode(base64)
-
-
-    if semantic == "xex"
-        for (i, byte) in enumerate(a_array)
-            result = result | UInt128(byte) << ((i-1) << 3)
-        end
-    elseif semantic == "gcm" # + i&0b0000_0111 - i&0b1111_1000
-        for (i, b) in enumerate(a_array)
-            b = BIT_REVERSE_TABLE[b+1]
-            result = result | (UInt128(b) << ((i-1) << 3))
-        end
-    end
-
-    FieldElement_quick(result, semantic, true)
+    value::UInt128 = uint8_to_uint128(a_array)
+    FieldElement_quick(int_to_semantic(value, semantic), semantic)
 end
 
 
 
 function Base.:+(a::FieldElement_quick, b::Vector{UInt8})
 
-    if length(b) > 16 | length(b) < 16
-        throw(ArgumentError("Length of b must be 16"))
-    end
+    length(b) == 16 || throw(ArgumentError("Input must be exactly 16 bytes"))
 
-    result::UInt128 = a.value
+    value = uint8_to_uint128(b)
+    int_value = int_to_semantic(value, a.semantic)
 
-    if a.semantic == "gcm"
-        for i in 1:length(b)
-            result ⊻= (UInt128(BIT_REVERSE_TABLE[b[i] + 1]) << ((i-1) << 3))
-        end
-    elseif a.semantic == "xex"
-        for i in 1:length(b)
-            result ⊻= UInt128(b[i]) << (i)
-        end
-    else
-        throw(ArgumentError("Unknown semantic: $semantic"))
-    end
-
-    return FieldElement_quick(result, a.semantic, true)
+    return FieldElement_quick(int_value ⊻ a.value, a.semantic, true)
 end
 
 
@@ -130,9 +121,7 @@ function Base.:*(a::FieldElement_quick, b::FieldElement_quick)
     prev_high_bit = UInt128(0)
 
     for i in 1:128
-
         prev_high_bit = (tmp_a & (UInt128(1) << 127)) != 0
-
         tmp_a <<= 1
         
         if prev_high_bit
