@@ -10,82 +10,64 @@ using .Sea128: encrypt_sea, decrypt_sea
 using .Galois: FieldElement
 
 
+arr_to_int(arr::Array{UInt8}) = reinterpret(UInt128, reverse(arr))[1]
+padl(len::Int) = (16 - (len & 0x0F)) & 0x0F ## pad with zeros to the next multiple of 16
+pad_array(arr::Array{UInt8}) = [arr; zeros(UInt8, padl(length(arr)))]
+
 function ghash(key::Array{UInt8}, nonce::Array{UInt8}, text::Array{UInt8}, ad::Array{UInt8}, algorithm::String)
 
     enc_func = algorithm == "aes128" ? encrypt : encrypt_sea 
     auth_key = enc_func("aes128", key, zeros(UInt8, 16))
+    auth_key = FieldElement(arr_to_int(auth_key), "gcm")
 
     len_block = vcat(
         reverse(reinterpret(UInt8, [length(ad) << 3])),
         reverse(reinterpret(UInt8, [length(text) << 3]))
     )
+    
+    Y = FieldElement(UInt128(0), "gcm")
+    data = [pad_array(ad); pad_array(text); len_block]
 
-    ad_pad_bytes = [ad; zeros(UInt8, (16 - length(ad) % 16))]
-    text_pad_bytes = [text; zeros(UInt8, (16 - length(text) % 16))]
-
-    ad_pad_int = (reinterpret(UInt128, ad_pad_bytes))[1]
-    ad_pad_gf = FieldElement(ad_pad_int, "gcm")
-    auth_key_gf = FieldElement(auth_key, "gcm")
-
-    ad_pad_gf *= auth_key_gf
-
-    for i in 1:16:(length(text_pad_bytes) - 1)
-        ad_pad_gf +=  text_pad_bytes[i:i+15]
-        ad_pad_gf *=  auth_key_gf
+    for i in 1:16:(length(data) - 1)
+        Y += data[i:i+15]
+        Y *= auth_key
     end
 
-    ad_pad_gf += len_block
-    ad_pad_gf *= auth_key_gf
+    tag = Y + enc_func("AES128", key, [nonce; UInt8[0,0,0,1]])
 
-    return ad_pad_gf + enc_func("AES128", key, [nonce; UInt8[0,0,0,1]])
-
+    return tag, len_block, auth_key
 end
 
 
-function crypt_gcm(key::Array{UInt8}, text::Array{UInt8}, ad::Array{UInt8}, nonce::Array{UInt8}, algorithm::String)
+function crypt_gcm(key::Array{UInt8}, text::Array{UInt8}, nonce::Array{UInt8}, algorithm::String)
 
     result_text = Array{UInt8}(undef, 0)
     enc_func = algorithm == "aes128" ? encrypt : encrypt_sea
 
-    for i in 1:16:length(text)
+
+    for i in 1:16:(length(text))
         temp_nonce = [nonce; reverse!(reinterpret(UInt8, [UInt32(i+1)]))]
         enc_i = enc_func("AES128", key, temp_nonce)
-        append!(result_text, text[i:i+15] .⊻ enc_i)
+        end_idx = min(i+15, length(text))
+        block = text[i:end_idx]
+        enc_block = enc_i[1:length(block)]
+        append!(result_text, block .⊻ enc_block)
     end
 
     return result_text
 end
 
-
-
 function decrypt_gcm(key::Array{UInt8}, ciphertext::Array{UInt8}, ad::Array{UInt8}, nonce::Array{UInt8}, algorithm::String)
-    plaintext = decrypt("AES128", key, ciphertext)
-    return plaintext
+    auth_tag = ghash(key, nonce, ciphertext, ad, algorithm)
+    plaintext = crypt_gcm(key, ciphertext, nonce, algorithm)
+    return plaintext, auth_tag[1], auth_tag[2], auth_tag[3]
 end
 
 
 function encrypt_gcm(key::Array{UInt8}, plaintext::Array{UInt8}, ad::Array{UInt8}, nonce::Array{UInt8}, algorithm::String)
-    ciphertext = crypt_gcm(key, plaintext, ad, nonce, algorithm)
-    return ciphertext
+    ciphertext = crypt_gcm(key, plaintext, nonce, algorithm)
+    auth_tag = ghash(key, nonce, ciphertext, ad, algorithm)
+    return ciphertext, auth_tag[1], auth_tag[2], auth_tag[3]
 end
-
-
-
-
-key = base64decode("Xjq/GkpTSWoe3ZH0F+tjrQ==")
-text = base64decode("RGFzIGlzdCBlaW4gVGVzdA==")
-ad = base64decode("QUQtRGF0ZW4=")
-nonce = base64decode("4gF+BtR3ku/PUQci")
-algorithm = "aes128"
-
-println(nonce)
-
-text = crypt_gcm(key, text, ad, nonce, algorithm)
-println(text)
-println(base64encode(text))
-
-auth_tag = ghash(key, nonce, text, ad, algorithm)
-println(auth_tag)
-
 
 end
