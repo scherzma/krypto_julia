@@ -16,6 +16,8 @@ using .Galois_quick: FieldElement_quick
 using .Sea128: encrypt_sea, decrypt_sea
 using .FDE: encrypt_fde, decrypt_fde
 using .GCM: encrypt_gcm, decrypt_gcm
+using Base.Threads
+
 
 
 function add_numbers(jsonContent::Dict)
@@ -131,12 +133,12 @@ function gcm_encrypt(jsonContent::Dict)
     return gcm_crypt(jsonContent, mode)
 end
 
-function padding_oracle_chaggpt(jsonContent::Dict)
+function padding_oracle(jsonContent::Dict)
     hostname::String = jsonContent["hostname"]
     port::Int = jsonContent["port"]
     iv::Array{UInt8} = base64decode(jsonContent["iv"])
     ciphertext::Array{UInt8} = base64decode(jsonContent["ciphertext"])
-    return padding_attack(hostname, port, iv, ciphertext)
+    return padding_attack("127.0.0.1", port, iv, ciphertext)
 end
 
 
@@ -150,7 +152,7 @@ ACTIONS::Dict{String, Vector{Any}} = Dict(
     "xex" => [xex, ["ciphertext"]],
     "gcm_encrypt" => [gcm_encrypt, ["ciphertext", "tag", "L", "H"]],
     "gcm_decrypt" => [gcm_decrypt, ["authentic", "plaintext"]],
-    "padding_oracle" => [padding_oracle_chaggpt, ["plaintext"]],
+    "padding_oracle" => [padding_oracle, ["plaintext"]],
 )
 
 function process(jsonContent::Dict)
@@ -166,7 +168,13 @@ function process(jsonContent::Dict)
             throw(ProcessingError("Unknown action: $action"))
         end
 
-        result = ACTIONS[action][1](arguments)
+        result = nothing
+        try
+            result = ACTIONS[action][1](arguments)
+        catch e
+            println("Error: $e")
+        end
+
         json_result = Dict()
 
         for (i, key) in enumerate(output_key)
