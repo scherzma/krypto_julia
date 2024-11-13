@@ -3,6 +3,10 @@ Directory Structure:
 
 📁 Krypto/
     📁 src/
+        📁 algorithms/
+            📄 gcm.jl (Content follows below)
+            📄 sea128.jl (Content follows below)
+            📄 xex_fde.jl (Content follows below)
         📁 math/
             📄 galois.jl (Content follows below)
         📁 util/
@@ -28,7 +32,7 @@ File: kauma
 #!/usr/bin/env julia
 
 using JSON
-using PackageCompiler
+#using PackageCompiler
 
 
 include("src/util/processor.jl")
@@ -50,8 +54,14 @@ end
 main()
 
 
-create_app("krypto", ".",
-    precompile_execution_file="./kauma")
+#create_app(".", "MyAppCompiled",
+#    precompile_execution_file="./kauma",
+#    force=true,
+#    filter_stdlibs=true,
+#    cpu_target="native",
+#)
+
+# julia --threads=auto --project=. kauma
 
 ===========================================
 File: src\Krypto.jl
@@ -63,6 +73,173 @@ using JSON
 include("util/processor.jl")
 
 export process
+
+end
+
+===========================================
+File: src\algorithms\gcm.jl
+===========================================
+
+
+module GCM
+
+include("sea128.jl")
+include("../math/galois.jl")
+
+using Nettle
+using Base64
+using .Sea128: encrypt_sea, decrypt_sea
+using .Galois: FieldElement
+
+
+function ghash(key::Array{UInt8}, nonce::Array{UInt8}, text::Array{UInt8}, ad::Array{UInt8}, algorithm::String)
+
+    enc_func = algorithm == "aes128" ? encrypt : encrypt_sea 
+    auth_key = enc_func("aes128", key, zeros(UInt8, 16))
+
+    len_block = vcat(
+        reverse(reinterpret(UInt8, [length(ad) << 3])),
+        reverse(reinterpret(UInt8, [length(text) << 3]))
+    )
+
+    auth_key_gf = FieldElement(auth_key, "gcm")
+    asdf = (reinterpret(UInt128, [ad; zeros(UInt8, 16 - length(ad))]))[1]
+    ad_pad_gf = FieldElement(asdf, "gcm")
+
+    for i in 1:16:length(text)
+        ad_pad_gf = ad_pad_gf * auth_key_gf
+        ad_pad_gf = ad_pad_gf + text[i:i+15]
+    end
+
+    encas = enc_func("AES128", key, [nonce; UInt8[0,0,0,1]])
+    println(encas)
+
+    for byte in ad_pad_gf
+        println(byte)
+    end
+    return ad_pad_gf .⊻ encas
+end
+
+
+function crypt_gcm(key::Array{UInt8}, text::Array{UInt8}, ad::Array{UInt8}, nonce::Array{UInt8}, algorithm::String)
+
+    result_text = Array{UInt8}(undef, 0)
+    enc_func = algorithm == "aes128" ? encrypt : encrypt_sea
+
+    for i in 1:16:length(text)
+        temp_nonce = [nonce; reverse!(reinterpret(UInt8, [UInt32(i+1)]))]
+        enc_i = enc_func("AES128", key, temp_nonce)
+        append!(result_text, text[i:i+15] .⊻ enc_i)
+    end
+
+    return result_text
+end
+
+
+
+function decrypt_gcm(key::Array{UInt8}, ciphertext::Array{UInt8}, ad::Array{UInt8}, nonce::Array{UInt8}, algorithm::String)
+    plaintext = decrypt("AES128", key, ciphertext)
+    return plaintext
+end
+
+
+function encrypt_gcm(key::Array{UInt8}, plaintext::Array{UInt8}, ad::Array{UInt8}, nonce::Array{UInt8}, algorithm::String)
+    ciphertext = crypt_gcm(key, plaintext, ad, nonce, algorithm)
+    return ciphertext
+end
+
+
+
+
+key = base64decode("Xjq/GkpTSWoe3ZH0F+tjrQ==")
+text = base64decode("RGFzIGlzdCBlaW4gVGVzdA==")
+ad = base64decode("QUQtRGF0ZW4=")
+nonce = base64decode("4gF+BtR3ku/PUQci")
+algorithm = "aes128"
+
+println(nonce)
+
+text = crypt_gcm(key, text, ad, nonce, algorithm)
+println(text)
+println(base64encode(text))
+
+auth_tag = ghash(key, nonce, text, ad, algorithm)
+println(auth_tag)
+
+
+end
+
+===========================================
+File: src\algorithms\sea128.jl
+===========================================
+
+module Sea128
+
+using Nettle
+
+const SEA_CONST = Array{UInt8}([0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0x11])
+
+function encrypt_sea(key::Array{UInt8}, input::Array{UInt8})
+    return encrypt("AES128", key, input) .⊻ SEA_CONST
+end
+
+function encrypt_sea(algorithm::String, key::Array{UInt8}, input::Array{UInt8})
+    return encrypt(algorithm, key, input) .⊻ SEA_CONST
+end
+
+function decrypt_sea(key::Array{UInt8}, input::Array{UInt8})
+    return decrypt("AES128", key, input .⊻ SEA_CONST)
+end
+
+function decrypt_sea(algorithm::String, key::Array{UInt8}, input::Array{UInt8})
+    return decrypt(algorithm, key, input .⊻ SEA_CONST)
+end
+
+end
+
+===========================================
+File: src\algorithms\xex_fde.jl
+===========================================
+
+module FDE
+
+include("sea128.jl")
+using .Sea128: encrypt_sea, decrypt_sea
+using Base64
+
+
+function mul_alpha!(tweak::Vector{UInt8})
+    carry = (tweak[16] & 0x80) != 0
+    for i in 16:-1:2
+        tweak[i] = ((tweak[i] << 1) & 0xFF) | (tweak[i-1] >> 7)
+    end
+    tweak[1] = ((tweak[1] << 1) & 0xFF)
+    tweak[1] = tweak[1] ⊻ carry ? 0x87 : 0x00
+end
+
+
+function crypt_fde(key::Array{UInt8}, tweak::Array{UInt8}, input::Array{UInt8}, mode::String)
+    k1, k2 = key[1:16], key[17:32]
+
+    tweak = encrypt_sea(k2, tweak)
+    text = Array{UInt8}(undef, 0)
+    crypt_function = mode == "encrypt" ? encrypt_sea : decrypt_sea
+
+    for i in 1:16:length(input)
+        block = input[i:i+15] .⊻ tweak
+        append!(text, (crypt_function(k1, block) .⊻ tweak)) 
+        mul_alpha!(tweak)
+    end
+    return text
+end
+
+function encrypt_fde(key::Array{UInt8}, tweak::Array{UInt8}, input::Array{UInt8})
+    return crypt_fde(key, tweak, input, "encrypt")
+end
+
+function decrypt_fde(key::Array{UInt8}, tweak::Array{UInt8}, input::Array{UInt8})
+    return crypt_fde(key, tweak, input, "decrypt")
+end
 
 end
 
@@ -83,6 +260,7 @@ end
 
 FieldElement(value::Int, semantic::String) = FieldElement(ZZ(value), semantic, ZZ(0x100000000000000000000000000000087))
 FieldElement(value::UInt128, semantic::String) = FieldElement(ZZ(value), semantic, ZZ(0x100000000000000000000000000000087))
+FieldElement(value::UInt128) = FieldElement(ZZRingElem(value), "XEX", ZZ(0x100000000000000000000000000000087))
 FieldElement(value::ZZRingElem, semantic::String) = FieldElement(value, semantic, ZZ(0x100000000000000000000000000000087))
 
 function FieldElement(poly::Array{UInt8}, semantic::String)
@@ -127,6 +305,15 @@ function Base.:+(a::FieldElement, b::FieldElement)
         throw(ArgumentError("Cannot add elements from different fields"))
     end
     return FieldElement(a.value ⊻ b.value, a.semantic, a.field)
+end
+
+function Base.:+(a::FieldElement, b::Vector{UInt8})
+
+    value = a.value
+    for i in 1:length(b)
+        value = value ⊻ (ZZ(b[i]) << (8 * (i-1)))
+    end
+    return FieldElement(value, a.semantic, a.field)
 end
 
 import Base.:⊻
@@ -193,6 +380,28 @@ function Base.:*(a::FieldElement, b::FieldElement)
 end
 
 
+
+import Base: iterate, eltype, length
+function Base.iterate(fe::FieldElement)
+    # Start with first byte (index 0)
+    return iterate(fe, 0)
+end
+
+function Base.iterate(fe::FieldElement, state)
+    # Stop after 16 bytes (128 bits)
+    if state >= 16
+        return nothing
+    end
+    
+    # Extract the current byte using bit shifting and masking
+    mask = ZZ(0xFF)
+    shift = state * 8
+    
+    byte_val = UInt8((fe.value >> shift) & mask)
+    return (byte_val, state + 1)
+end
+
+
 import Base.show
 function Base.show(io::IO, a::FieldElement)
     print(io, "FieldElement($(a.value), $(a.field))")
@@ -214,9 +423,6 @@ function to_block(a::FieldElement)
     bytes = Vector{UInt8}(undef, BLOCK_SIZE)
     value = a.value
     
-    # Initialize bytes to zero
-    #fill!(bytes, 0x00)
-    
     mask = ZZ(0xFF)
     
     if a.semantic == "xex"
@@ -236,6 +442,11 @@ function to_block(a::FieldElement)
     end
     
     return base64encode(bytes)
+end
+
+
+function get_bytes(a::FieldElement)
+    return base64decode(a.to_block())
 end
 
 
@@ -304,8 +515,13 @@ using JSON
 using Base64
 include("../math/galois.jl")
 include("conversions.jl")
+include("../algorithms/sea128.jl")
+include("../algorithms/xex_fde.jl")
 using .Galois: FieldElement
 using .Conversions: base64_to_Nemo
+using .Sea128: encrypt_sea, decrypt_sea
+using .FDE: encrypt_fde, decrypt_fde
+
 
 function add_numbers(jsonContent::Dict)
     return jsonContent["number1"] + jsonContent["number2"]
@@ -345,15 +561,39 @@ function gfmul(jsonContent::Dict)
 end
 
 function sea128(jsonContent::Dict)
-    println("sea128")
-    println("jsonContent: ", jsonContent)
-    return "ciphertext"
+    mode::String = jsonContent["mode"]
+    key::String = jsonContent["key"]
+    input::String = jsonContent["input"]
+    
+    key_bytes = base64decode(key)
+    input_bytes = base64decode(input)
+
+    if mode == "encrypt"
+        result_bytes = encrypt_sea(key_bytes, input_bytes)
+    elseif mode == "decrypt"
+        result_bytes = decrypt_sea(key_bytes, input_bytes)
+    end
+
+    return base64encode(result_bytes)
 end
 
 function xex(jsonContent::Dict)
-    println("xex")
-    println("jsonContent: ", jsonContent)
-    return "ciphertext"
+    mode::String = jsonContent["mode"]
+    key::String = jsonContent["key"]
+    tweak::String = jsonContent["tweak"]
+    input::String = jsonContent["input"]
+
+    key_bytes = base64decode(key)
+    tweak_bytes = base64decode(tweak)
+    input_bytes = base64decode(input)
+
+    if mode == "encrypt"
+        result_bytes = encrypt_fde(key_bytes, tweak_bytes, input_bytes)
+    elseif mode == "decrypt"
+        result_bytes = decrypt_fde(key_bytes, tweak_bytes, input_bytes)
+    end
+
+    return base64encode(result_bytes)
 end
 
 function gcm_encrypt(jsonContent::Dict)

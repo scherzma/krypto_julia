@@ -11,7 +11,7 @@ function mul_alpha!(tweak::Vector{UInt8})
         tweak[i] = ((tweak[i] << 1) & 0xFF) | (tweak[i-1] >> 7)
     end
     tweak[1] = ((tweak[1] << 1) & 0xFF)
-    tweak[1] = tweak[1] ⊻ carry ? 0x87 : 0x00
+    tweak[1] = tweak[1] ⊻ (carry ? 0x87 : 0x00)
 end
 
 
