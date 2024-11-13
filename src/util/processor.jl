@@ -3,6 +3,9 @@
 module Processing
 using JSON
 using Base64
+
+include("../util/semantic_types.jl")
+using .SemanticTypes: Semantic, from_string
 include("../math/galois_fast.jl")
 include("../algorithms/sea128.jl")
 include("../algorithms/xex_fde.jl")
@@ -11,7 +14,6 @@ using .Galois_quick: FieldElement_quick
 using .Sea128: encrypt_sea, decrypt_sea
 using .FDE: encrypt_fde, decrypt_fde
 using .GCM: encrypt_gcm, decrypt_gcm
-
 
 
 function add_numbers(jsonContent::Dict)
@@ -24,13 +26,13 @@ end
 
 function poly2block(jsonContent::Dict)
     coefficients::Array{UInt8} = jsonContent["coefficients"]
-    semantic::String = jsonContent["semantic"]
+    semantic = from_string(jsonContent["semantic"])
     gf = FieldElement_quick(coefficients, semantic)
     return gf.to_block()
 end
 
 function block2poly(jsonContent::Dict)
-    semantic::String = jsonContent["semantic"]
+    semantic = from_string(jsonContent["semantic"])
     block::String = jsonContent["block"]
 
     gf = FieldElement_quick(block, semantic)
@@ -40,7 +42,7 @@ function block2poly(jsonContent::Dict)
 end
 
 function gfmul(jsonContent::Dict)
-    semantic::String = jsonContent["semantic"]
+    semantic = from_string(jsonContent["semantic"])
     a::String = jsonContent["a"]
     b::String = jsonContent["b"]
 
