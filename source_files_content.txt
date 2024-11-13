@@ -5,6 +5,7 @@ Directory Structure:
     📁 src/
         📁 algorithms/
             📄 gcm.jl (Content follows below)
+            📄 padding_oracle.jl (Content follows below)
             📄 sea128.jl (Content follows below)
             📄 xex_fde.jl (Content follows below)
         📁 math/
@@ -13,7 +14,6 @@ Directory Structure:
         📁 testing/
             📄 performance.jl (Content follows below)
         📁 util/
-            📄 conversions.jl (Content follows below)
             📄 processor.jl (Content follows below)
             📄 semantic_types.jl (Content follows below)
         📄 Krypto.jl (Content follows below)
@@ -87,9 +87,12 @@ File: src\algorithms\gcm.jl
 
 module GCM
 
+
+include("../util/semantic_types.jl")
+using .SemanticTypes
+
 include("sea128.jl")
 include("../math/galois_fast.jl")
-
 using Nettle
 using Base64
 using .Sea128: encrypt_sea, decrypt_sea
@@ -104,14 +107,14 @@ function ghash(key::Array{UInt8}, nonce::Array{UInt8}, text::Array{UInt8}, ad::A
 
     enc_func = algorithm == "aes128" ? encrypt : encrypt_sea 
     auth_key = enc_func("aes128", key, zeros(UInt8, 16))
-    auth_key = FieldElement_quick(arr_to_int(auth_key), GCM)
+    auth_key = FieldElement_quick(arr_to_int(auth_key), SemanticTypes.GCM)
 
     len_block = vcat(
         reverse(reinterpret(UInt8, [length(ad) << 3])),
         reverse(reinterpret(UInt8, [length(text) << 3]))
     )
     
-    Y = FieldElement_quick(UInt128(0), GCM)
+    Y = FieldElement_quick(UInt128(0), SemanticTypes.GCM)
     data = [pad_array(ad); pad_array(text); len_block]
 
     for i in 1:16:(length(data) - 1)
@@ -157,6 +160,40 @@ function encrypt_gcm(key::Array{UInt8}, plaintext::Array{UInt8}, ad::Array{UInt8
 end
 
 end
+
+===========================================
+File: src\algorithms\padding_oracle.jl
+===========================================
+
+module PaddingOracle
+
+using Sockets 
+
+
+struct PaddingClient
+    connection::TCPSocket
+end
+
+function PaddingClient(hostname::String, port::Int)
+    client = connect(hostname, port)
+    return PaddingClient(client)
+end
+
+
+
+function send_to_server(a::PaddingClient, data::Array{UInt8})
+    write(a.connection, data)
+end
+
+
+function padding_attack(hostname::String, port::Int, iv::Array{UInt8}, ciphertext::Array{UInt8})
+    return "plaintext"
+end
+
+
+end
+
+
 
 ===========================================
 File: src\algorithms\sea128.jl
@@ -239,8 +276,7 @@ File: src\math\galois_fast.jl
 
 module Galois_quick
 
-include("../util/semantic_types.jl")
-using .SemanticTypes: Semantic, GCM, XEX
+using ..SemanticTypes: Semantic, GCM, XEX
 using Base64
 
 import Base: +, *, ⊻, <<, >>, %, show, length
@@ -480,39 +516,6 @@ println("\nXEX mode benchmarks:")
 @btime func2_xex($(test_bytes[1]))    # Optimized XEX function
 
 ===========================================
-File: src\util\conversions.jl
-===========================================
-
-
-
-module Conversions
-using Nemo
-using Base64
-
-function base64_to_Nemo(base64::String, semantic::String)
-
-    result::ZZRingElem = 0
-    a_array = base64decode(base64)
-
-    if semantic == "xex"
-        reverse!(a_array)
-        for byte in a_array
-            result = result << 8  # Shift left by 8 bits
-            result = result | ZZ(byte)  # OR with current byte
-        end
-    elseif semantic == "gcm"
-        for byte in a_array
-            result = result << 8  # Shift left by 8 bits
-            result = result | ZZ(byte)  # OR with current byte
-        end
-    end
-
-    return result
-end
-
-end
-
-===========================================
 File: src\util\processor.jl
 ===========================================
 
@@ -521,12 +524,15 @@ File: src\util\processor.jl
 module Processing
 using JSON
 using Base64
+
+include("../util/semantic_types.jl")
+using .SemanticTypes: Semantic, from_string
 include("../math/galois_fast.jl")
 include("../algorithms/sea128.jl")
 include("../algorithms/xex_fde.jl")
 include("../algorithms/gcm.jl")
-include("../util/semantic_types.jl")
-using .SemanticTypes: Semantic, GCM, XEX
+include("../algorithms/padding_oracle.jl")
+using .PaddingOracle: PaddingClient, send_to_server, padding_attack
 using .Galois_quick: FieldElement_quick
 using .Sea128: encrypt_sea, decrypt_sea
 using .FDE: encrypt_fde, decrypt_fde
@@ -543,13 +549,13 @@ end
 
 function poly2block(jsonContent::Dict)
     coefficients::Array{UInt8} = jsonContent["coefficients"]
-    semantic::Semantic = (jsonContent["semantic"] == "gcm" ? GCM : XEX)
+    semantic = from_string(jsonContent["semantic"])
     gf = FieldElement_quick(coefficients, semantic)
     return gf.to_block()
 end
 
 function block2poly(jsonContent::Dict)
-    semantic::Semantic = (jsonContent["semantic"] == "gcm" ? GCM : XEX)
+    semantic = from_string(jsonContent["semantic"])
     block::String = jsonContent["block"]
 
     gf = FieldElement_quick(block, semantic)
@@ -559,7 +565,7 @@ function block2poly(jsonContent::Dict)
 end
 
 function gfmul(jsonContent::Dict)
-    semantic::Semantic = (jsonContent["semantic"] == "gcm" ? GCM : XEX)
+    semantic = from_string(jsonContent["semantic"])
     a::String = jsonContent["a"]
     b::String = jsonContent["b"]
 
@@ -647,7 +653,11 @@ function gcm_encrypt(jsonContent::Dict)
 end
 
 function padding_oracle_chaggpt(jsonContent::Dict)
-    return "plaintext"
+    hostname::String = jsonContent["hostname"]
+    port::Int = jsonContent["port"]
+    iv::Array{UInt8} = base64decode(jsonContent["iv"])
+    ciphertext::Array{UInt8} = base64decode(jsonContent["ciphertext"])
+    return padding_attack(hostname, port, iv, ciphertext)
 end
 
 
@@ -691,7 +701,7 @@ function process(jsonContent::Dict)
         result_testcases[key] = json_result
     end
 
-    println(JSON.json(result_testcases, 1))
+    println(JSON.json(Dict("testcases" => result_testcases)))
 
 end
 end
@@ -702,5 +712,10 @@ File: src\util\semantic_types.jl
 
 module SemanticTypes
 @enum Semantic GCM XEX
-export Semantic, GCM, XEX
+
+function from_string(s::String)::Semantic
+    return s == "gcm" ? GCM : XEX
+end
+
+export Semantic, GCM, XEX, from_string
 end
