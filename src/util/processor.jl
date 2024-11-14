@@ -66,9 +66,9 @@ function sea128(jsonContent::Dict)
     input_bytes = base64decode(input)
 
     if mode == "encrypt"
-        result_bytes = encrypt_sea(key_bytes, input_bytes)
+        result_bytes = encrypt_sea("aes128", key_bytes, input_bytes)
     elseif mode == "decrypt"
-        result_bytes = decrypt_sea(key_bytes, input_bytes)
+        result_bytes = decrypt_sea("aes128", key_bytes, input_bytes)
     end
 
     return base64encode(result_bytes)
