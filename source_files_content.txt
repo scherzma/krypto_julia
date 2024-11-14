@@ -186,8 +186,60 @@ function send_to_server(a::PaddingClient, data::Array{UInt8})
 end
 
 
+function generate_ivs(padding_length::Int, decrypted_bytes::Array{UInt8}, original_iv::Array{UInt8}=zeros(UInt8, 16))
+    ivs = UInt8[]  # Initialize an empty array to hold the concatenated IVs
+
+    for i in 0:255
+        # Copy the original IV to modify it for each attempt
+        iv = copy(original_iv)
+
+        # Adjust the known decrypted bytes to conform to the current padding length
+        for j in 1:(padding_length - 1)
+            position = 16 - (j - 1)
+            iv[position] = iv[position] ⊻ decrypted_bytes[end - (j - 1)] ⊻ UInt8(padding_length)
+        end
+
+        # Modify the byte we're currently attacking
+        position = 16 - (padding_length - 1)
+        iv[position] = iv[position] ⊻ UInt8(i) ⊻ UInt8(padding_length)
+
+        # Append the modified IV to the list
+        append!(ivs, iv)
+    end
+
+    return ivs
+end
+
+
+function attack_block(client::PaddingClient, block::Array{UInt8})
+    write(client.connection, block)
+
+    dec_block = Array{UInt8}(undef, 0)
+
+    num_ivs::UInt8 = 255
+
+    for i in 1:length(block)
+        write(client.connection, UInt8[num_ivs,00])
+        ivs = generate_ivs(num_ivs, dec_block)
+        println(ivs)
+        write(client.connection, ivs)
+    end
+
+    return dec_block
+end
+
+
 function padding_attack(hostname::String, port::Int, iv::Array{UInt8}, ciphertext::Array{UInt8})
-    return "plaintext"
+    client = PaddingClient(hostname, port)
+
+    plaintext = Array{UInt8}(undef, 0)
+
+    for i in 1:16:length(ciphertext)
+        block = ciphertext[i:i+15]
+        append!(plaintext, attack_block(client, block))
+    end
+
+    return plaintext
 end
 
 
@@ -537,6 +589,8 @@ using .Galois_quick: FieldElement_quick
 using .Sea128: encrypt_sea, decrypt_sea
 using .FDE: encrypt_fde, decrypt_fde
 using .GCM: encrypt_gcm, decrypt_gcm
+using Base.Threads
+
 
 
 function add_numbers(jsonContent::Dict)
@@ -652,12 +706,12 @@ function gcm_encrypt(jsonContent::Dict)
     return gcm_crypt(jsonContent, mode)
 end
 
-function padding_oracle_chaggpt(jsonContent::Dict)
+function padding_oracle(jsonContent::Dict)
     hostname::String = jsonContent["hostname"]
     port::Int = jsonContent["port"]
     iv::Array{UInt8} = base64decode(jsonContent["iv"])
     ciphertext::Array{UInt8} = base64decode(jsonContent["ciphertext"])
-    return padding_attack(hostname, port, iv, ciphertext)
+    return padding_attack("127.0.0.1", port, iv, ciphertext)
 end
 
 
@@ -671,7 +725,7 @@ ACTIONS::Dict{String, Vector{Any}} = Dict(
     "xex" => [xex, ["ciphertext"]],
     "gcm_encrypt" => [gcm_encrypt, ["ciphertext", "tag", "L", "H"]],
     "gcm_decrypt" => [gcm_decrypt, ["authentic", "plaintext"]],
-    "padding_oracle" => [padding_oracle_chaggpt, ["plaintext"]],
+    "padding_oracle" => [padding_oracle, ["plaintext"]],
 )
 
 function process(jsonContent::Dict)
@@ -687,7 +741,13 @@ function process(jsonContent::Dict)
             throw(ProcessingError("Unknown action: $action"))
         end
 
-        result = ACTIONS[action][1](arguments)
+        result = nothing
+        try
+            result = ACTIONS[action][1](arguments)
+        catch e
+            println("Error: $e")
+        end
+
         json_result = Dict()
 
         for (i, key) in enumerate(output_key)
