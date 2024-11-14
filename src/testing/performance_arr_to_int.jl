@@ -2,6 +2,7 @@ using BenchmarkTools
 
 # Original function
 @inline function uint8_to_uint128_original(bytes::Vector{UInt8})::UInt128
+    # length(bytes) == 16 || throw(ArgumentError("Input must be exactly 16 bytes")) # This should really be checked, but it's a tiny bit slower
     @inbounds begin
         result = (UInt128(bytes[1]) << 120) | (UInt128(bytes[2]) << 112) | 
                  (UInt128(bytes[3]) << 104) | (UInt128(bytes[4]) << 96) |
