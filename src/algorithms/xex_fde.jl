@@ -18,24 +18,19 @@ end
 function crypt_fde(key::Array{UInt8}, tweak::Array{UInt8}, input::Array{UInt8}, mode::String)
     k1, k2 = key[1:16], key[17:32]
 
-    tweak = encrypt_sea(k2, tweak)
+    tweak = encrypt_sea("aes128" ,k2, tweak)
     text = Array{UInt8}(undef, 0)
     crypt_function = mode == "encrypt" ? encrypt_sea : decrypt_sea
 
     for i in 1:16:length(input)
         block = input[i:i+15] .⊻ tweak
-        append!(text, (crypt_function(k1, block) .⊻ tweak)) 
+        append!(text, (crypt_function("aes128", k1, block) .⊻ tweak)) 
         mul_alpha!(tweak)
     end
     return text
 end
 
-function encrypt_fde(key::Array{UInt8}, tweak::Array{UInt8}, input::Array{UInt8})
-    return crypt_fde(key, tweak, input, "encrypt")
-end
-
-function decrypt_fde(key::Array{UInt8}, tweak::Array{UInt8}, input::Array{UInt8})
-    return crypt_fde(key, tweak, input, "decrypt")
-end
+encrypt_fde(key::Array{UInt8}, tweak::Array{UInt8}, input::Array{UInt8}) = crypt_fde(key, tweak, input, "encrypt")
+decrypt_fde(key::Array{UInt8}, tweak::Array{UInt8}, input::Array{UInt8}) = crypt_fde(key, tweak, input, "decrypt")
 
 end

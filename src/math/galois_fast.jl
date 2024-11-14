@@ -93,8 +93,8 @@ end
 
 function Base.:*(a::FieldElement_quick, b::FieldElement_quick)
     aggregate = UInt128(0)
-    tmp_a = a.value
-    tmp_b = b.value
+    tmp_a::UInt128 = a.value
+    tmp_b::UInt128 = b.value
 
 
     if (tmp_b & UInt128(1)) == 1
@@ -103,17 +103,14 @@ function Base.:*(a::FieldElement_quick, b::FieldElement_quick)
 
     prev_high_bit = UInt128(0)
 
-    for i in 1:128
-        prev_high_bit = (tmp_a & (UInt128(1) << 127)) != 0
+    @inbounds for i in 1:128
+        prev_high_bit = tmp_a >> 127
         tmp_a <<= 1
+        tmp_a ⊻= GF128_MODULUS * prev_high_bit
         
-        if prev_high_bit
-            tmp_a ⊻= GF128_MODULUS
-        end
-        
-        if (tmp_b >> i) & UInt128(1) == 1
-            aggregate ⊻= tmp_a
-        end
+        bit_test = tmp_b & 1           # Test LSB directly
+        aggregate ⊻= tmp_a * bit_test
+        tmp_b >>= 1
 
     end
     
