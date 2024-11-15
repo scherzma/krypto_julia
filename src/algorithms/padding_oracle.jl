@@ -1,6 +1,7 @@
 module PaddingOracle
 
 using Sockets 
+using Base: zeros
 
 
 struct PaddingClient
@@ -14,51 +15,56 @@ end
 
 
 
-function send_to_server(a::PaddingClient, data::Array{UInt8})
-    write(a.connection, data)
-end
+function attack_block(client::PaddingClient, block::Array{UInt8})
+    # write(client.connection, block)
+
+    plaintext_block = zeros(UInt8, length(block))
+
+    num_ivs::UInt16 = 8
+
+    for i in length(block):-1:1
+
+        found_iv = false
+        for j in 0:num_ivs:255
+            write(client.connection, UInt8[num_ivs & 0xFF,num_ivs >> 8])
+            ivs::Array{UInt8} = Array{UInt8}(undef, 0)
+
+            for k::UInt16 in j:j+num_ivs - 1
+                z_array::Array{UInt8} = zeros(UInt8, i - 1)
+                counter::UInt8 = k
+
+                previous_iv = Array{UInt8}(undef, 16 - i)
+                for ind in 16:-1:i+1
+                    previous_iv[17-ind] = plaintext_block[ind] ^ (16 - i)
+                end
+                iv = [z_array; counter; previous_iv]
+                append!(ivs, iv)
+            end
+
+            write(client.connection, ivs)
+
+            response = read(client.connection, num_ivs)
 
 
-function generate_ivs(padding_length::Int, decrypted_bytes::Array{UInt8}, original_iv::Array{UInt8}=zeros(UInt8, 16))
-    ivs = UInt8[]  # Initialize an empty array to hold the concatenated IVs
+            for ind in eachindex(response)
+                if response[ind] == 0x01
+                    decrypted_byte::UInt8 = block[i] ^ (ind + j - 1) ^ (16 - i)
+                    plaintext_block[i] = decrypted_byte
+                    found_iv = true
+                    break;
+                end
+            end
 
-    for i in 0:255
-        # Copy the original IV to modify it for each attempt
-        iv = copy(original_iv)
-
-        # Adjust the known decrypted bytes to conform to the current padding length
-        for j in 1:(padding_length - 1)
-            position = 16 - (j - 1)
-            iv[position] = iv[position] ⊻ decrypted_bytes[end - (j - 1)] ⊻ UInt8(padding_length)
+            if found_iv
+                break;
+            end
         end
 
-        # Modify the byte we're currently attacking
-        position = 16 - (padding_length - 1)
-        iv[position] = iv[position] ⊻ UInt8(i) ⊻ UInt8(padding_length)
 
-        # Append the modified IV to the list
-        append!(ivs, iv)
+        println(plaintext_block)
     end
 
-    return ivs
-end
-
-
-function attack_block(client::PaddingClient, block::Array{UInt8})
-    write(client.connection, block)
-
-    dec_block = Array{UInt8}(undef, 0)
-
-    num_ivs::UInt8 = 255
-
-    for i in 1:length(block)
-        write(client.connection, UInt8[num_ivs,00])
-        ivs = generate_ivs(num_ivs, dec_block)
-        println(ivs)
-        write(client.connection, ivs)
-    end
-
-    return dec_block
+    return plaintext_block
 end
 
 
@@ -66,9 +72,11 @@ function padding_attack(hostname::String, port::Int, iv::Array{UInt8}, ciphertex
     client = PaddingClient(hostname, port)
 
     plaintext = Array{UInt8}(undef, 0)
-
-    for i in 1:16:length(ciphertext)
-        block = ciphertext[i:i+15]
+    text = [iv; ciphertext]
+    for i in length(text)-15:-16:16
+        block = text[i:i+15]
+        previous_block = text[i-16:i-1]
+        write(client.connection, previous_block)
         append!(plaintext, attack_block(client, block))
     end
 

@@ -1,0 +1,92 @@
+XXXXXXXXXXXXXXXX
+XOR
+YYYYYYYYYYYYYYYY
+=
+HALLOHALLOHALLOH
+
+H ^ ? = 2
+H ^ 2 = ?
+
+
+XXXXXXXXXXXXXXXX
+XOR
+---------------6
+=
+---------------1
+
+X ^ 6 = 1
+X ^ Y = H
+
+H = ?
+X = ?
+
+6 ^ 1 = X
+X ^ Y = H
+
+(6 ^ 1) ^ Y = H
+
+
+
+H ^ Y = X
+
+Y ^ X = H
+? ^ X = i
+
+X = Y ^ H
+X = i ^ ?
+
+
+
+
+
+XXXXXXXXXXXXXXXX = ?
+XOR
+YYYYYYYYYYYYYYYY
+=
+HALLOHALLOHALLOH = ?
+
+
+XXXXXXXXXXXXXXXX
+XOR
+---------------6
+=
+---------------1
+
+XXXXXXXXXXXXXXXX
+XOR
+--------------??
+=
+--------------22
+
+X ^ 6 = 1
+X ^ ? = 2
+
+X = 6 ^ 1
+(6 ^ 1) ^ 2 = ? = 5
+
+
+XXXXXXXXXXXXXXXX
+XOR
+--------------?5
+=
+--------------22
+
+
+
+XXXXXXXXXXXXXXXX
+XOR
+--------------85
+=
+--------------22
+
+X2 = ?
+O = ? 
+
+X2 ^ 8 = 2
+8 ^ 2 = X2
+
+O = X2 ^ Y2 = Y2 ^ (8 ^ 2)
+
+
+8 ^ ? = 3
+5 ^ ? = 3
