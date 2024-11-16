@@ -1,7 +1,7 @@
 Directory Structure:
 ===================
 
-📁 Krypto/
+📁 krypto_julia/
     📁 src/
         📁 algorithms/
             📄 gcm.jl (Content follows below)
@@ -12,14 +12,16 @@ Directory Structure:
             📄 galois.jl.bak
             📄 galois_fast.jl (Content follows below)
         📁 testing/
-            📄 performance.jl (Content follows below)
+            📄 performance_arr_to_int.jl (Content follows below)
+            📄 performance_int_semantic.jl (Content follows below)
+            📄 performance_multiply.jl (Content follows below)
         📁 util/
             📄 processor.jl (Content follows below)
             📄 semantic_types.jl (Content follows below)
         📄 Krypto.jl (Content follows below)
-    📄 kauma
     📄 Manifest.toml
     📄 Project.toml
+    📄 kauma
     📄 sample.json
     📄 sample_small.json
     📄 script.py
@@ -49,7 +51,7 @@ function main()
         file = ARGS[1]
     end
     
-    @time jsonContent = JSON.parsefile(file)
+    jsonContent = JSON.parsefile(file)
     @time process(jsonContent)
 end
 
@@ -68,7 +70,7 @@ main()
 # julia --threads=auto --project=. kauma
 
 ===========================================
-File: src\Krypto.jl
+File: src/Krypto.jl
 ===========================================
 
 module Krypto
@@ -81,7 +83,7 @@ export process
 end
 
 ===========================================
-File: src\algorithms\gcm.jl
+File: src/algorithms/gcm.jl
 ===========================================
 
 
@@ -162,7 +164,7 @@ end
 end
 
 ===========================================
-File: src\algorithms\padding_oracle.jl
+File: src/algorithms/padding_oracle.jl
 ===========================================
 
 module PaddingOracle
@@ -186,8 +188,60 @@ function send_to_server(a::PaddingClient, data::Array{UInt8})
 end
 
 
+function generate_ivs(padding_length::Int, decrypted_bytes::Array{UInt8}, original_iv::Array{UInt8}=zeros(UInt8, 16))
+    ivs = UInt8[]  # Initialize an empty array to hold the concatenated IVs
+
+    for i in 0:255
+        # Copy the original IV to modify it for each attempt
+        iv = copy(original_iv)
+
+        # Adjust the known decrypted bytes to conform to the current padding length
+        for j in 1:(padding_length - 1)
+            position = 16 - (j - 1)
+            iv[position] = iv[position] ⊻ decrypted_bytes[end - (j - 1)] ⊻ UInt8(padding_length)
+        end
+
+        # Modify the byte we're currently attacking
+        position = 16 - (padding_length - 1)
+        iv[position] = iv[position] ⊻ UInt8(i) ⊻ UInt8(padding_length)
+
+        # Append the modified IV to the list
+        append!(ivs, iv)
+    end
+
+    return ivs
+end
+
+
+function attack_block(client::PaddingClient, block::Array{UInt8})
+    write(client.connection, block)
+
+    dec_block = Array{UInt8}(undef, 0)
+
+    num_ivs::UInt8 = 255
+
+    for i in 1:length(block)
+        write(client.connection, UInt8[num_ivs,00])
+        ivs = generate_ivs(num_ivs, dec_block)
+        println(ivs)
+        write(client.connection, ivs)
+    end
+
+    return dec_block
+end
+
+
 function padding_attack(hostname::String, port::Int, iv::Array{UInt8}, ciphertext::Array{UInt8})
-    return "plaintext"
+    client = PaddingClient(hostname, port)
+
+    plaintext = Array{UInt8}(undef, 0)
+
+    for i in 1:16:length(ciphertext)
+        block = ciphertext[i:i+15]
+        append!(plaintext, attack_block(client, block))
+    end
+
+    return plaintext
 end
 
 
@@ -196,7 +250,7 @@ end
 
 
 ===========================================
-File: src\algorithms\sea128.jl
+File: src/algorithms/sea128.jl
 ===========================================
 
 module Sea128
@@ -205,26 +259,13 @@ using Nettle
 
 const SEA_CONST = Array{UInt8}([0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0x11])
 
-function encrypt_sea(key::Array{UInt8}, input::Array{UInt8})
-    return encrypt("AES128", key, input) .⊻ SEA_CONST
-end
-
-function encrypt_sea(algorithm::String, key::Array{UInt8}, input::Array{UInt8})
-    return encrypt(algorithm, key, input) .⊻ SEA_CONST
-end
-
-function decrypt_sea(key::Array{UInt8}, input::Array{UInt8})
-    return decrypt("AES128", key, input .⊻ SEA_CONST)
-end
-
-function decrypt_sea(algorithm::String, key::Array{UInt8}, input::Array{UInt8})
-    return decrypt(algorithm, key, input .⊻ SEA_CONST)
-end
+encrypt_sea(algorithm::String, key::Array{UInt8}, input::Array{UInt8}) = encrypt(algorithm, key, input) .⊻ SEA_CONST
+decrypt_sea(algorithm::String, key::Array{UInt8}, input::Array{UInt8}) = decrypt(algorithm, key, input .⊻ SEA_CONST)
 
 end
 
 ===========================================
-File: src\algorithms\xex_fde.jl
+File: src/algorithms/xex_fde.jl
 ===========================================
 
 module FDE
@@ -247,30 +288,25 @@ end
 function crypt_fde(key::Array{UInt8}, tweak::Array{UInt8}, input::Array{UInt8}, mode::String)
     k1, k2 = key[1:16], key[17:32]
 
-    tweak = encrypt_sea(k2, tweak)
+    tweak = encrypt_sea("aes128" ,k2, tweak)
     text = Array{UInt8}(undef, 0)
     crypt_function = mode == "encrypt" ? encrypt_sea : decrypt_sea
 
     for i in 1:16:length(input)
         block = input[i:i+15] .⊻ tweak
-        append!(text, (crypt_function(k1, block) .⊻ tweak)) 
+        append!(text, (crypt_function("aes128", k1, block) .⊻ tweak)) 
         mul_alpha!(tweak)
     end
     return text
 end
 
-function encrypt_fde(key::Array{UInt8}, tweak::Array{UInt8}, input::Array{UInt8})
-    return crypt_fde(key, tweak, input, "encrypt")
-end
-
-function decrypt_fde(key::Array{UInt8}, tweak::Array{UInt8}, input::Array{UInt8})
-    return crypt_fde(key, tweak, input, "decrypt")
-end
+encrypt_fde(key::Array{UInt8}, tweak::Array{UInt8}, input::Array{UInt8}) = crypt_fde(key, tweak, input, "encrypt")
+decrypt_fde(key::Array{UInt8}, tweak::Array{UInt8}, input::Array{UInt8}) = crypt_fde(key, tweak, input, "decrypt")
 
 end
 
 ===========================================
-File: src\math\galois_fast.jl
+File: src/math/galois_fast.jl
 ===========================================
 
 
@@ -295,22 +331,21 @@ const MASK_128 = UInt128(1) << 127
 
 const BIT_REVERSE_TABLE = UInt8[0, 128, 64, 192, 32, 160, 96, 224, 16, 144, 80, 208, 48, 176, 112, 240, 8, 136, 72, 200, 40, 168, 104, 232, 24, 152, 88, 216, 56, 184, 120, 248, 4, 132, 68, 196, 36, 164, 100, 228, 20, 148, 84, 212, 52, 180, 116, 244, 12, 140, 76, 204, 44, 172, 108, 236, 28, 156, 92, 220, 60, 188, 124, 252, 2, 130, 66, 194, 34, 162, 98, 226, 18, 146, 82, 210, 50, 178, 114, 242, 10, 138, 74, 202, 42, 170, 106, 234, 26, 154, 90, 218, 58, 186, 122, 250, 6, 134, 70, 198, 38, 166, 102, 230, 22, 150, 86, 214, 54, 182, 118, 246, 14, 142, 78, 206, 46, 174, 110, 238, 30, 158, 94, 222, 62, 190, 126, 254, 1, 129, 65, 193, 33, 161, 97, 225, 17, 145, 81, 209, 49, 177, 113, 241, 9, 137, 73, 201, 41, 169, 105, 233, 25, 153, 89, 217, 57, 185, 121, 249, 5, 133, 69, 197, 37, 165, 101, 229, 21, 149, 85, 213, 53, 181, 117, 245, 13, 141, 77, 205, 45, 173, 109, 237, 29, 157, 93, 221, 61, 189, 125, 253, 3, 131, 67, 195, 35, 163, 99, 227, 19, 147, 83, 211, 51, 179, 115, 243, 11, 139, 75, 203, 43, 171, 107, 235, 27, 155, 91, 219, 59, 187, 123, 251, 7, 135, 71, 199, 39, 167, 103, 231, 23, 151, 87, 215, 55, 183, 119, 247, 15, 143, 79, 207, 47, 175, 111, 239, 31, 159, 95, 223, 63, 191, 127, 255]
 
-
-Base.:⊻(a::FieldElement_quick, b::FieldElement_quick) = FieldElement_quick(a.value ⊻ b.value, a.semantic)
-Base.:⊻(a::FieldElement_quick, b::UInt128) = FieldElement_quick(a.value ⊻ b, a.semantic)
-Base.:>>(a::FieldElement_quick, b::Int) = FieldElement_quick(a.value >> b, a.semantic)
-Base.:>>(a::FieldElement_quick, b::Int) = FieldElement_quick(a.value >> b, a.semantic)
-Base.:%(a::FieldElement_quick, b::UInt128) = FieldElement_quick(a.value % b, a.semantic)
-Base.:%(a::FieldElement_quick, b::FieldElement_quick) = FieldElement_quick(a.value % b.value, a.semantic)
-Base.show(io::IO, a::FieldElement_quick) = print(io, "FieldElement($(a.value), $(a.semantic))")
-bit_string(a::FieldElement_quick) = join(reverse(digits(a.value, base=2, pad=128)))
-to_polynomial(a::FieldElement_quick) = [x for x in 0:127 if (a.value >> x) % 2 == 1]
-get_bytes(a::FieldElement_quick) = base64decode(a.to_block())
-Base.:+(a::FieldElement_quick, b::FieldElement_quick) = FieldElement_quick(a.value ⊻ b.value, a.semantic)
-
+@inline Base.:⊻(a::FieldElement_quick, b::FieldElement_quick) = FieldElement_quick(a.value ⊻ b.value, a.semantic)
+@inline Base.:⊻(a::FieldElement_quick, b::UInt128) = FieldElement_quick(a.value ⊻ b, a.semantic)
+@inline Base.:>>(a::FieldElement_quick, b::Int) = FieldElement_quick(a.value >> b, a.semantic)
+@inline Base.:>>(a::FieldElement_quick, b::Int) = FieldElement_quick(a.value >> b, a.semantic)
+@inline Base.:%(a::FieldElement_quick, b::UInt128) = FieldElement_quick(a.value % b, a.semantic)
+@inline Base.:%(a::FieldElement_quick, b::FieldElement_quick) = FieldElement_quick(a.value % b.value, a.semantic)
+@inline Base.show(io::IO, a::FieldElement_quick) = print(io, "FieldElement($(a.value), $(a.semantic))")
+@inline bit_string(a::FieldElement_quick) = join(reverse(digits(a.value, base=2, pad=128)))
+@inline to_polynomial(a::FieldElement_quick) = [x for x in 0:127 if (a.value >> x) % 2 == 1]
+@inline get_bytes(a::FieldElement_quick) = base64decode(a.to_block())
+@inline Base.:+(a::FieldElement_quick, b::FieldElement_quick) = FieldElement_quick(a.value ⊻ b.value, a.semantic)
 
 
-function int_to_semantic(x::UInt128, semantic::Semantic)
+
+@inline function int_to_semantic(x::UInt128, semantic::Semantic)
     if semantic == GCM
         return bitreverse(x)
     elseif semantic == XEX
@@ -319,8 +354,8 @@ function int_to_semantic(x::UInt128, semantic::Semantic)
 end
 
 
-function uint8_to_uint128(bytes::Vector{UInt8})::UInt128
-    length(bytes) == 16 || throw(ArgumentError("Input must be exactly 16 bytes"))
+@inline function uint8_to_uint128(bytes::Vector{UInt8})::UInt128
+    # length(bytes) == 16 || throw(ArgumentError("Input must be exactly 16 bytes")) # This should really be checked, but it's a tiny bit slower
     @inbounds begin
         result = (UInt128(bytes[1]) << 120) | (UInt128(bytes[2]) << 112) | (UInt128(bytes[3]) << 104) | (UInt128(bytes[4]) << 96) |
                  (UInt128(bytes[5]) << 88)  | (UInt128(bytes[6]) << 80)  | (UInt128(bytes[7]) << 72)  | (UInt128(bytes[8]) << 64) |
@@ -368,8 +403,8 @@ end
 
 function Base.:*(a::FieldElement_quick, b::FieldElement_quick)
     aggregate = UInt128(0)
-    tmp_a = a.value
-    tmp_b = b.value
+    tmp_a::UInt128 = a.value
+    tmp_b::UInt128 = b.value
 
 
     if (tmp_b & UInt128(1)) == 1
@@ -378,18 +413,13 @@ function Base.:*(a::FieldElement_quick, b::FieldElement_quick)
 
     prev_high_bit = UInt128(0)
 
-    for i in 1:128
-        prev_high_bit = (tmp_a & (UInt128(1) << 127)) != 0
-        tmp_a <<= 1
-        
-        if prev_high_bit
-            tmp_a ⊻= GF128_MODULUS
-        end
-        
-        if (tmp_b >> i) & UInt128(1) == 1
-            aggregate ⊻= tmp_a
-        end
+    @inbounds for i in 1:128
+        prev_high_bit = tmp_a >> 127
+        tmp_a <<= UInt128(1)
+        tmp_a ⊻= GF128_MODULUS * prev_high_bit
 
+        tmp_b >>= UInt128(1)
+        aggregate ⊻= tmp_a * (tmp_b & UInt128(1))
     end
     
     return FieldElement_quick(aggregate, a.semantic, true)
@@ -413,7 +443,7 @@ end
 
 
 import Base: getproperty
-function getproperty(gf::FieldElement_quick, sym::Symbol)
+@inline function getproperty(gf::FieldElement_quick, sym::Symbol)
     if sym === :bit_string
         return () -> bit_string(gf)
     end
@@ -434,89 +464,263 @@ end
 
 
 ===========================================
-File: src\testing\performance.jl
+File: src/testing/performance_arr_to_int.jl
 ===========================================
 
 using BenchmarkTools
 
 # Original function
-function int_to_semantic(x::UInt128, semantic::String)
-    value::UInt128 = 0
-    if semantic == "gcm"
-        x = (x << 64) | (x >> 64)                           # Swap 64-bit halves
-        x = ((x << 32) & 0xFFFFFFFF00000000FFFFFFFF00000000) | ((x >> 32) & 0x00000000FFFFFFFF00000000FFFFFFFF)
-        x = ((x << 16) & 0xFFFF0000FFFF0000FFFF0000FFFF0000) | ((x >> 16) & 0x0000FFFF0000FFFF0000FFFF0000FFFF)
-        x = ((x << 8)  & 0xFF00FF00FF00FF00FF00FF00FF00FF00) | ((x >> 8)  & 0x00FF00FF00FF00FF00FF00FF00FF00FF)
-        x = ((x << 4)  & 0xF0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0) | ((x >> 4)  & 0x0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F)
-        x = ((x << 2)  & 0xCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC) | ((x >> 2)  & 0x3333333333333333333333333333333333)
-        x = ((x << 1)  & 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA) | ((x >> 1)  & 0x5555555555555555555555555555555555)
-        value = x
-    elseif semantic == "xex"
-        x = (x << 64) | (x >> 64)                           # Swap 64-bit halves
-        x = ((x << 32) & 0xFFFFFFFF00000000FFFFFFFF00000000) | ((x >> 32) & 0x00000000FFFFFFFF00000000FFFFFFFF)
-        x = ((x << 16) & 0xFFFF0000FFFF0000FFFF0000FFFF0000) | ((x >> 16) & 0x0000FFFF0000FFFF0000FFFF0000FFFF)
-        x = ((x << 8)  & 0xFF00FF00FF00FF00FF00FF00FF00FF00) | ((x >> 8)  & 0x00FF00FF00FF00FF00FF00FF00FF00FF)
-        value = x
-    else
-        throw(ArgumentError("Unknown semantic: $semantic"))
+@inline function uint8_to_uint128_original(bytes::Vector{UInt8})::UInt128
+    # length(bytes) == 16 || throw(ArgumentError("Input must be exactly 16 bytes")) # This should really be checked, but it's a tiny bit slower
+    @inbounds begin
+        result = (UInt128(bytes[1]) << 120) | (UInt128(bytes[2]) << 112) | 
+                 (UInt128(bytes[3]) << 104) | (UInt128(bytes[4]) << 96) |
+                 (UInt128(bytes[5]) << 88)  | (UInt128(bytes[6]) << 80) | 
+                 (UInt128(bytes[7]) << 72)  | (UInt128(bytes[8]) << 64) |
+                 (UInt128(bytes[9]) << 56)  | (UInt128(bytes[10]) << 48) | 
+                 (UInt128(bytes[11]) << 40) | (UInt128(bytes[12]) << 32) |
+                 (UInt128(bytes[13]) << 24) | (UInt128(bytes[14]) << 16) | 
+                 (UInt128(bytes[15]) << 8)  | UInt128(bytes[16])
+    end
+    return result
+end
+
+# Alternative implementation using folding
+@inline function uint8_to_uint128_folded(bytes::Vector{UInt8})::UInt128
+    @inbounds begin
+        # Split into 4 parts for better pipelining
+        upper = (UInt128(bytes[1]) << 120) | (UInt128(bytes[2]) << 112) | 
+                (UInt128(bytes[3]) << 104) | (UInt128(bytes[4]) << 96)
+        
+        upper_mid = (UInt128(bytes[5]) << 88) | (UInt128(bytes[6]) << 80) | 
+                    (UInt128(bytes[7]) << 72) | (UInt128(bytes[8]) << 64)
+        
+        lower_mid = (UInt128(bytes[9]) << 56) | (UInt128(bytes[10]) << 48) | 
+                    (UInt128(bytes[11]) << 40) | (UInt128(bytes[12]) << 32)
+        
+        lower = (UInt128(bytes[13]) << 24) | (UInt128(bytes[14]) << 16) | 
+                (UInt128(bytes[15]) << 8) | UInt128(bytes[16])
+
+        # Combine the parts
+        result = upper | upper_mid | lower_mid | lower
+    end
+    return result
+end
+
+# Benchmark setup
+function run_benchmarks()
+    # Generate random test data
+    test_bytes = rand(UInt8, 16)
+    
+    # Verify correctness
+    result_original = uint8_to_uint128_original(test_bytes)
+    result_folded = uint8_to_uint128_folded(test_bytes)
+    @assert result_original == result_folded "Implementations produce different results!"
+
+    println("\nOriginal implementation:")
+    @btime uint8_to_uint128_original($(test_bytes))
+    
+    println("\nFolded implementation:")
+    @btime uint8_to_uint128_folded($(test_bytes))
+
+    # Stress test
+    stress_test_size = 10000
+    test_data = [rand(UInt8, 16) for _ in 1:stress_test_size]
+    
+    println("\nStress test with $stress_test_size random byte arrays:")
+    println("Original:")
+    @btime for bytes in $test_data
+        uint8_to_uint128_original(bytes)
     end
 
-    return value
-end
-
-@enum Semantic GCM XEX
-# XEX case - just byte reversal
-function int_to_semantic(x::UInt128, ::Val{:xex})
-    return bswap(x)
-end
-
-# GCM case - bit reversal 
-function int_to_semantic(x::UInt128, ::Val{:gcm})
-    return bitreverse(x)
-end
-
-# Wrapper function for backward compatibility if needed
-function int_to_semantic(x::UInt128, semantic::String)
-    if semantic == "gcm"
-        return int_to_semantic(x, Val(:gcm))
-    elseif semantic == "xex"
-        return int_to_semantic(x, Val(:xex))
-    else
-        throw(ArgumentError("Unknown semantic: $semantic"))
+    println("\nFolded:")
+    @btime for bytes in $test_data
+        uint8_to_uint128_folded(bytes)
     end
 end
 
-
-test_bytes = rand(UInt128, 1000)
-
-# Original function
-func1(x) = int_to_semantic(x, "gcm")
-func1_xex(x) = int_to_semantic(x, "xex")
-
-# Optimized function 
-func2(x) = int_to_semantic_claude(x, "gcm")
-func2_xex(x) = int_to_semantic_claude(x, "xex")
-
-# Verify correctness for GCM
-for x in test_bytes[1:10]  # Test first 10 values
-    @assert func1(x) == func2(x) "Mismatch in GCM mode for value: $x"
-end
-
-# Verify correctness for XEX
-for x in test_bytes[1:10]  # Test first 10 values
-    @assert func1_xex(x) == func2_xex(x) "Mismatch in XEX mode for value: $x"
-end
-
-println("GCM mode benchmarks:")
-@btime func1($(test_bytes[1]))        # Original GCM function
-@btime func2($(test_bytes[1]))        # Optimized GCM function
-
-println("\nXEX mode benchmarks:")
-@btime func1_xex($(test_bytes[1]))    # Original XEX function
-@btime func2_xex($(test_bytes[1]))    # Optimized XEX function
+# Run the benchmarks
+run_benchmarks()
 
 ===========================================
-File: src\util\processor.jl
+File: src/testing/performance_int_semantic.jl
+===========================================
+
+using BenchmarkTools
+
+@enum Semantic GCM XEX
+
+
+# First implementation using if-else
+@inline first(x::UInt128, ::Val{GCM}) = bitreverse(x)
+@inline first(x::UInt128, ::Val{XEX}) = bswap(x)
+
+# Alternative implementation using ternary operator
+@inline function second(x::UInt128, semantic::Semantic)
+    if semantic == GCM
+        return bitreverse(x)
+    elseif semantic == XEX
+        return bswap(x)
+    end
+end
+
+function run_benchmarks()
+    # Quick correctness check
+    test_val = rand(UInt128)
+    @assert first(test_val, Val(GCM)) == second(test_val, GCM)
+    @assert first(test_val, Val(XEX)) == second(test_val, XEX)
+
+    # Large-scale performance test
+    test_size = 100_000_000
+    test_numbers = [rand(UInt128) for _ in 1:test_size]
+    
+    println("\nLarge-scale performance test with $test_size iterations:")
+
+    println("\n1:")
+    @btime for x in $test_numbers
+        first(x, Val(GCM))
+    end
+
+    @btime for x in $test_numbers
+        first(x, Val(XEX))
+    end
+
+    println("\n2:")
+    @btime for x in $test_numbers
+        second(x, XEX)
+    end
+
+    @btime for x in $test_numbers
+        second(x, GCM)
+    end
+
+end
+
+run_benchmarks()
+
+===========================================
+File: src/testing/performance_multiply.jl
+===========================================
+
+using BenchmarkTools
+using Base.Threads
+# Constants
+const GF128_MODULUS = UInt128(0x87)  # Standard GF(2^128) modulus
+
+# Original struct definition modified to use only UInt128
+struct FieldElement_quick
+    value::UInt128
+    semantic::Symbol  # Using Symbol instead of String for better performance
+    reduced::Bool
+end
+
+
+
+# Original multiplication function
+@inline function mult_original(a::FieldElement_quick, b::FieldElement_quick)
+    aggregate = UInt128(0)
+    tmp_a::UInt128 = a.value
+    tmp_b::UInt128 = b.value
+    
+    if (tmp_b & UInt128(1)) == 1
+        aggregate ⊻= tmp_a
+    end
+    
+    @inbounds for _ in 1:16  # 128/8 = 16 iterations
+        for _ in 1:8
+            prev_high_bit = tmp_a >> 127
+            tmp_a <<= UInt128(1)
+            tmp_a ⊻= GF128_MODULUS * prev_high_bit
+
+            tmp_b >>= 1
+            aggregate ⊻= tmp_a * (tmp_b & UInt128(1))
+        end
+    end
+    
+    return FieldElement_quick(aggregate, a.semantic, true)
+end
+
+
+# SIMD-optimized version (experimental)
+@inline function mult_safe(a::FieldElement_quick, b::FieldElement_quick)
+    aggregate = UInt128(0)
+    tmp_a::UInt128 = a.value
+    tmp_b::UInt128 = b.value
+    
+    if (tmp_b & UInt128(1)) == 1
+        aggregate ⊻= tmp_a
+    end
+    
+    @inbounds for _ in 1:16  # 128/8 = 16 iterations
+        for _ in 1:8
+            prev_high_bit = tmp_a >> 127
+            tmp_a <<= 1
+            tmp_a ⊻= GF128_MODULUS * prev_high_bit
+
+            tmp_b >>= 1
+            aggregate ⊻= tmp_a * (tmp_b & 1)
+        end
+    end
+    
+    return FieldElement_quick(aggregate, a.semantic, true)
+end
+
+
+
+
+
+
+
+
+# Benchmark setup
+function run_benchmarks()
+    # Generate random test values
+    test_a = FieldElement_quick(rand(UInt128), :xex, true)
+    test_b = FieldElement_quick(rand(UInt128), :xex, true)
+    
+    # Verify correctness
+    result_original = mult_original(test_a, test_b)
+    result_simd = mult_safe(test_a, test_b)
+    
+    @assert result_original.value == result_simd.value "SIMD version produces different results!"
+
+
+    
+
+    println("Original implementation:")
+    @btime mult_original($(test_a), $(test_b))
+
+
+    println("\nSafe implementation:")
+    @btime mult_safe($(test_a), $(test_b))
+
+
+
+    
+    # Additional stress test
+    stress_test_size = 10000
+    test_data = [(FieldElement_quick(rand(UInt128), :gcm, true), 
+                  FieldElement_quick(rand(UInt128), :gcm, true)) 
+                 for _ in 1:stress_test_size]
+    
+    println("\nStress test with $stress_test_size random pairs:")
+    println("Original:")
+    @btime for (a, b) in $test_data
+        mult_original(a, b)
+    end
+
+    
+    println("\nSafe:")
+    @btime for (a, b) in $test_data
+        mult_safe(a, b)
+    end
+end
+
+# Run the benchmarks
+run_benchmarks()
+
+===========================================
+File: src/util/processor.jl
 ===========================================
 
 
@@ -537,6 +741,8 @@ using .Galois_quick: FieldElement_quick
 using .Sea128: encrypt_sea, decrypt_sea
 using .FDE: encrypt_fde, decrypt_fde
 using .GCM: encrypt_gcm, decrypt_gcm
+using Base.Threads
+
 
 
 function add_numbers(jsonContent::Dict)
@@ -585,9 +791,9 @@ function sea128(jsonContent::Dict)
     input_bytes = base64decode(input)
 
     if mode == "encrypt"
-        result_bytes = encrypt_sea(key_bytes, input_bytes)
+        result_bytes = encrypt_sea("aes128", key_bytes, input_bytes)
     elseif mode == "decrypt"
-        result_bytes = decrypt_sea(key_bytes, input_bytes)
+        result_bytes = decrypt_sea("aes128", key_bytes, input_bytes)
     end
 
     return base64encode(result_bytes)
@@ -652,12 +858,12 @@ function gcm_encrypt(jsonContent::Dict)
     return gcm_crypt(jsonContent, mode)
 end
 
-function padding_oracle_chaggpt(jsonContent::Dict)
+function padding_oracle(jsonContent::Dict)
     hostname::String = jsonContent["hostname"]
     port::Int = jsonContent["port"]
     iv::Array{UInt8} = base64decode(jsonContent["iv"])
     ciphertext::Array{UInt8} = base64decode(jsonContent["ciphertext"])
-    return padding_attack(hostname, port, iv, ciphertext)
+    return padding_attack("127.0.0.1", port, iv, ciphertext)
 end
 
 
@@ -671,7 +877,7 @@ ACTIONS::Dict{String, Vector{Any}} = Dict(
     "xex" => [xex, ["ciphertext"]],
     "gcm_encrypt" => [gcm_encrypt, ["ciphertext", "tag", "L", "H"]],
     "gcm_decrypt" => [gcm_decrypt, ["authentic", "plaintext"]],
-    "padding_oracle" => [padding_oracle_chaggpt, ["plaintext"]],
+    "padding_oracle" => [padding_oracle, ["plaintext"]],
 )
 
 function process(jsonContent::Dict)
@@ -687,7 +893,13 @@ function process(jsonContent::Dict)
             throw(ProcessingError("Unknown action: $action"))
         end
 
-        result = ACTIONS[action][1](arguments)
+        result = nothing
+        try
+            result = ACTIONS[action][1](arguments)
+        catch e
+            println("Error: $e")
+        end
+
         json_result = Dict()
 
         for (i, key) in enumerate(output_key)
@@ -707,7 +919,7 @@ end
 end
 
 ===========================================
-File: src\util\semantic_types.jl
+File: src/util/semantic_types.jl
 ===========================================
 
 module SemanticTypes

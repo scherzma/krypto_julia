@@ -221,6 +221,24 @@
         "iv": "dxTwbO/hhIeycOTbTnp8QQ==",
         "ciphertext": "e+Sn+nG28niB8Df++hmjFRTcti07wHsrivmoxnDDBaELOfLS16p/pqvAuz01UPq7"
       }
+    },
+    "simple_ascii": {
+      "action":"padding_oracle",
+      "arguments":{
+         "hostname":"localhost",
+         "port":18652,
+         "iv":"Knj/bz9ezNyKfmC992sWZA==",
+         "ciphertext":"Uzh4q/npGDCMpGTAGu7cTw=="
+      }
+    },
+    "multiple_blocks": {
+      "action":"padding_oracle",
+      "arguments":{
+         "hostname":"localhost",
+         "port":18652,
+         "iv":"j/YTn+2VIxEnPhjSKqBJCA==",
+         "ciphertext":"VUamnKUs7CalB27Uz/+HDwqrk77W/y9rGu0zp76QHRVSXeyckEDjjxgNQvSQ7uzePFtlFxs9O5c1BQHmlmA65ndNNTbOrtU/vLDEJBxqCZ0="
+      }
     }
   }
 }
