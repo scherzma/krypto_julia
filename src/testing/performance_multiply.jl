@@ -4,7 +4,7 @@ using Base.Threads
 const GF128_MODULUS = UInt128(0x87)  # Standard GF(2^128) modulus
 
 # Original struct definition modified to use only UInt128
-struct FieldElement_quick
+struct FieldElement
     value::UInt128
     semantic::Symbol  # Using Symbol instead of String for better performance
     reduced::Bool
@@ -13,7 +13,7 @@ end
 
 
 # Original multiplication function
-@inline function mult_original(a::FieldElement_quick, b::FieldElement_quick)
+@inline function mult_original(a::FieldElement, b::FieldElement)
     aggregate = UInt128(0)
     tmp_a::UInt128 = a.value
     tmp_b::UInt128 = b.value
@@ -33,12 +33,12 @@ end
         end
     end
     
-    return FieldElement_quick(aggregate, a.semantic, true)
+    return FieldElement(aggregate, a.semantic, true)
 end
 
 
 # SIMD-optimized version (experimental)
-@inline function mult_safe(a::FieldElement_quick, b::FieldElement_quick)
+@inline function mult_safe(a::FieldElement, b::FieldElement)
     aggregate = UInt128(0)
     tmp_a::UInt128 = a.value
     tmp_b::UInt128 = b.value
@@ -58,7 +58,7 @@ end
         end
     end
     
-    return FieldElement_quick(aggregate, a.semantic, true)
+    return FieldElement(aggregate, a.semantic, true)
 end
 
 
@@ -71,8 +71,8 @@ end
 # Benchmark setup
 function run_benchmarks()
     # Generate random test values
-    test_a = FieldElement_quick(rand(UInt128), :xex, true)
-    test_b = FieldElement_quick(rand(UInt128), :xex, true)
+    test_a = FieldElement(rand(UInt128), :xex, true)
+    test_b = FieldElement(rand(UInt128), :xex, true)
     
     # Verify correctness
     result_original = mult_original(test_a, test_b)
@@ -95,8 +95,8 @@ function run_benchmarks()
     
     # Additional stress test
     stress_test_size = 10000
-    test_data = [(FieldElement_quick(rand(UInt128), :gcm, true), 
-                  FieldElement_quick(rand(UInt128), :gcm, true)) 
+    test_data = [(FieldElement(rand(UInt128), :gcm, true), 
+                    FieldElement(rand(UInt128), :gcm, true)) 
                  for _ in 1:stress_test_size]
     
     println("\nStress test with $stress_test_size random pairs:")
