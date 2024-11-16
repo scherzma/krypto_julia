@@ -11,7 +11,7 @@ include("../algorithms/sea128.jl")
 include("../algorithms/xex_fde.jl")
 include("../algorithms/gcm.jl")
 include("../algorithms/padding_oracle.jl")
-using .PaddingOracle: PaddingClient, send_to_server, padding_attack
+using .PaddingOracle: PaddingClient, padding_attack
 using .Galois_quick: FieldElement_quick
 using .Sea128: encrypt_sea, decrypt_sea
 using .FDE: encrypt_fde, decrypt_fde
@@ -135,10 +135,14 @@ end
 
 function padding_oracle(jsonContent::Dict)
     hostname::String = jsonContent["hostname"]
+    if hostname == "localhost"
+        hostname = "127.0.0.1"
+    end
     port::Int = jsonContent["port"]
     iv::Array{UInt8} = base64decode(jsonContent["iv"])
     ciphertext::Array{UInt8} = base64decode(jsonContent["ciphertext"])
-    return padding_attack("127.0.0.1", port, iv, ciphertext)
+    result = padding_attack(hostname, port, iv, ciphertext)
+    return base64encode(result)
 end
 
 
