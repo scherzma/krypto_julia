@@ -279,6 +279,27 @@
         ],
         "k": 3
       }
+    },
+    "gfdiv": {
+      "action": "gfdiv",
+      "arguments": {
+        "a": "JAAAAAAAAAAAAAAAAAAAAA==",
+        "b": "wAAAAAAAAAAAAAAAAAAAAA==" 
+      }
+    },
+    "gfpoly_divmod": {
+      "action": "gfpoly_divmod",
+      "arguments": {
+        "A": [
+          "JAAAAAAAAAAAAAAAAAAAAA==",
+          "wAAAAAAAAAAAAAAAAAAAAA==",
+          "ACAAAAAAAAAAAAAAAAAAAA=="
+        ],
+        "B": [
+          "0AAAAAAAAAAAAAAAAAAAAA==",
+          "IQAAAAAAAAAAAAAAAAAAAA=="
+        ]
+      }
     }
   }
 }

@@ -4,7 +4,7 @@ module Galois_quick
 using ..SemanticTypes: Semantic, GCM, XEX
 using Base64
 
-import Base: +, *, ⊻, <<, >>, %, show, length
+import Base: +, *, ⊻, <<, >>, %, show, length, /
 
 struct FieldElement
     value::UInt128
@@ -112,6 +112,36 @@ function Base.:*(a::FieldElement, b::FieldElement)::FieldElement
     end
     
     return FieldElement(aggregate, a.semantic, true)
+end
+
+
+
+function Base.:/(a::FieldElement, b::FieldElement)::FieldElement # http://www.ee.unb.ca/cgi-bin/tervo/calc.pl?num=100100101010101011011111000111&den=1111001110010101&f=d&e=1&p=1&m=1
+    if b.value == 0
+        throw(ErrorException("Division by zero"))
+    end
+    if a.value == 0
+        return FieldElement(UInt128(0), a.semantic, true)
+    end
+    if b.value == 1
+        return a
+    end
+
+    numerator = a.value
+    denominator = b.value
+    quotient = UInt128(0)
+
+    numerator_degree = 127 - leading_zeros(numerator)
+    denominator_degree = 127 - leading_zeros(denominator)
+
+    while numerator >= denominator
+        shift = numerator_degree - denominator_degree
+        shifted_divisor = denominator << shift
+        numerator = numerator ⊻ shifted_divisor
+        quotient |= UInt128(1) << shift
+        numerator_degree = 127 - leading_zeros(numerator)
+    end
+    return FieldElement(quotient, a.semantic, true)
 end
 
 

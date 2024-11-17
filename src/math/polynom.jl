@@ -9,7 +9,7 @@ using Base64
 include("galois_fast.jl")
 using .Galois_quick: FieldElement
 
-import Base: +, *, ⊻, <<, >>, %, show, length, ^
+import Base: +, *, ⊻, <<, >>, %, show, length, ^, ÷, /
 
 struct Polynomial
     coefficients::Array{FieldElement}
@@ -90,6 +90,45 @@ function Base.:^(a::Polynomial, b::Int)::Polynomial
 
     return result.reduce()
 end
+
+
+# Overload the division operator to perform polynomial long division
+# Returns a tuple (quotient, remainder)
+function ÷(a::Polynomial, b::Polynomial)::Tuple{Polynomial, Polynomial}
+
+    if b.power < 0 || all(fe.value == 0 for fe in b.coefficients)
+        error("Division by zero polynomial is not allowed.")
+    end
+
+    dividend = a.coefficients
+    divisor = b.coefficients
+
+    deg_dividend = a.power
+    deg_divisor = b.power
+
+    if deg_divisor > deg_dividend
+        return Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)]), a
+    end
+
+    quotient = [FieldElement(UInt128(0), from_string("gcm"), true) for _ in 1:(deg_dividend - deg_divisor + 1)]
+
+    while length(dividend) >= length(divisor)
+        leading_term = dividend[end] / divisor[end]
+        quotient[length(dividend) - length(divisor) + 1] = leading_term
+
+        # Subtract the scaled divisor from the dividend
+
+        for i in 1:length(divisor)
+            dividend[length(dividend) - length(divisor) + i] += leading_term * divisor[i]
+        end
+
+        # Remove leading zeros
+        dividend = dividend.reduce()
+    end
+
+    return Polynomial(quotient), a - Polynomial(quotient) * b
+end
+
 
 function repr(p::Polynomial)::Array{String}
     return [gfe.to_block() for gfe in p.coefficients]

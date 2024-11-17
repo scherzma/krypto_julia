@@ -178,6 +178,27 @@ function polynomial_pow(jsonContent::Dict)
     return (poly_A ^ B).repr()
 end
 
+function polynomial_div(jsonContent::Dict)
+    A::String = jsonContent["a"]
+    B::String = jsonContent["b"]
+
+    a = FieldElement(A, from_string("gcm"))
+    b = FieldElement(B, from_string("gcm"))
+    c = a / b
+    return c.to_block()
+end
+
+function polynomial_divmod(jsonContent::Dict)
+    A::Array{String} = jsonContent["A"]
+    B::Array{String} = jsonContent["B"]
+
+    poly_A = Polynomial(A)
+    poly_B = Polynomial(B)
+
+    result = poly_A ÷ poly_B
+    return result[1].repr(), result[2].repr()
+end
+
 ACTIONS::Dict{String, Vector{Any}} = Dict(
     "add_numbers" => [add_numbers, ["sum"]],
     "subtract_numbers" => [subtract_numbers, ["difference"]],
@@ -192,6 +213,8 @@ ACTIONS::Dict{String, Vector{Any}} = Dict(
     "gfpoly_add" => [polynomial_add, ["S"]],
     "gfpoly_mul" => [polynomial_mul, ["P"]],
     "gfpoly_pow" => [polynomial_pow, ["Z"]],
+    "gfdiv" => [polynomial_div, ["q"]],
+    "gfpoly_divmod" => [polynomial_divmod, ["Q", "R"]],
 )
 
 function process(jsonContent::Dict)
@@ -211,7 +234,7 @@ function process(jsonContent::Dict)
         try
             result = ACTIONS[action][1](arguments)
         catch e
-            println("Error: $e")
+            println(stderr, "Error: $e")
         end
 
         json_result = Dict()
