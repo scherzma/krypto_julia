@@ -176,7 +176,7 @@ function process(jsonContent::Dict)
         try
             result = ACTIONS[action][1](arguments)
         catch e
-            println("Error: $e")
+            println(stderr, "Error: $e")
         end
 
         json_result = Dict()
