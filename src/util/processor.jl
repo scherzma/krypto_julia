@@ -184,8 +184,9 @@ function polynomial_div(jsonContent::Dict)
 
     a = FieldElement(A, from_string("gcm"))
     b = FieldElement(B, from_string("gcm"))
-    c = a / b
-    return c.to_block()
+    #c = a / b
+    #return c.to_block()
+    return "result"
 end
 
 function polynomial_divmod(jsonContent::Dict)
@@ -195,8 +196,9 @@ function polynomial_divmod(jsonContent::Dict)
     poly_A = Polynomial(A)
     poly_B = Polynomial(B)
 
-    result = poly_A ÷ poly_B
-    return result[1].repr(), result[2].repr()
+    #result = poly_A ÷ poly_B
+    #return result[1].repr(), result[2].repr()
+    return "result", "result"
 end
 
 ACTIONS::Dict{String, Vector{Any}} = Dict(

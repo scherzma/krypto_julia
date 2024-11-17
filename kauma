@@ -15,7 +15,7 @@ function main()
     end
     
     jsonContent = JSON.parsefile(file)
-    @time process(jsonContent)
+    process(jsonContent)
 end
 
 
