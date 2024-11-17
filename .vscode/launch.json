@@ -1,0 +1,22 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "julia",
+            "request": "launch",
+            "name": "Launch Program",
+            "program": "${workspaceFolder}/kauma",
+            "stopOnEntry": false
+        },
+        {
+            "type": "julia",
+            "request": "launch",
+            "name": "Debug kauma",
+            "program": "./kauma",
+            "stopOnEntry": false,
+            "cwd": "${workspaceFolder}",
+            "juliaEnv": "${command:activeJuliaEnvironment}",
+        }
+    ],
+    "compounds": []
+}

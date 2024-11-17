@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 #!/usr/bin/env python3
 
 import os
@@ -12,3 +13,38 @@ from src.main import main
 
 if __name__ == "__main__":
     main()
+=======
+#!/usr/local/bin/julia
+
+using JSON
+#using PackageCompiler
+
+
+include("src/util/processor.jl")
+using .Processing: process
+
+function main()
+    file::String = "./sample.json"
+
+    if length(ARGS) == 1
+        file = ARGS[1]
+    end
+    
+    jsonContent = JSON.parsefile(file)
+    process(jsonContent)
+end
+
+
+
+main()
+
+
+#create_app(".", "Krypto",
+#    precompile_execution_file="./kauma",
+#    force=true,
+#    filter_stdlibs=true,
+#    cpu_target="native",
+#)
+
+# julia --threads=auto --project=. kauma
+>>>>>>> krypto_julia/main
