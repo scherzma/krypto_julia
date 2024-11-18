@@ -226,17 +226,20 @@ function process(jsonContent::Dict)
     for (key, value) in jsonContent["testcases"]
         action = value["action"]
         arguments = value["arguments"]
-        output_key = ACTIONS[action][2]
 
         if !haskey(ACTIONS, action)
-            throw(ProcessingError("Unknown action: $action"))
+            #throw(ErrorException("Unknown action: $action"))
+            continue
         end
 
+
+        output_key = ACTIONS[action][2]
         result = nothing
         try
             result = ACTIONS[action][1](arguments)
         catch e
-            println(stderr, "Error: $e")
+            #println(stderr, "Error: $e")
+            continue
         end
 
         json_result = Dict()
@@ -252,7 +255,7 @@ function process(jsonContent::Dict)
         result_testcases[key] = json_result
     end
 
-    println(JSON.json(Dict("testcases" => result_testcases)))
+    println(JSON.json(Dict("responses" => result_testcases)))
 
 end
 
