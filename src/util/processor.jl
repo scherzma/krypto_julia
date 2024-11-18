@@ -7,12 +7,16 @@ using Base64
 include("../util/semantic_types.jl")
 using .SemanticTypes: Semantic, from_string
 include("../math/galois_fast.jl")
+using .Galois_quick: FieldElement
+include("../math/polynom.jl")
+using .Polynom: Polynomial
 include("../algorithms/sea128.jl")
 include("../algorithms/xex_fde.jl")
 include("../algorithms/gcm.jl")
 include("../algorithms/padding_oracle.jl")
 using .PaddingOracle: PaddingClient, padding_attack
-using .Galois_quick: FieldElement_quick
+using .Galois_quick: FieldElement
+using .Polynom: Polynomial
 using .Sea128: encrypt_sea, decrypt_sea
 using .FDE: encrypt_fde, decrypt_fde
 using .GCM: encrypt_gcm, decrypt_gcm
@@ -31,7 +35,7 @@ end
 function poly2block(jsonContent::Dict)
     coefficients::Array{UInt8} = jsonContent["coefficients"]
     semantic = from_string(jsonContent["semantic"])
-    gf = FieldElement_quick(coefficients, semantic)
+    gf = FieldElement(coefficients, semantic)
     return gf.to_block()
 end
 
@@ -39,7 +43,7 @@ function block2poly(jsonContent::Dict)
     semantic = from_string(jsonContent["semantic"])
     block::String = jsonContent["block"]
 
-    gf = FieldElement_quick(block, semantic)
+    gf = FieldElement(block, semantic)
 
     result = gf.to_polynomial()
     return result
@@ -50,8 +54,8 @@ function gfmul(jsonContent::Dict)
     a::String = jsonContent["a"]
     b::String = jsonContent["b"]
 
-    gf_a = FieldElement_quick(a, semantic)
-    gf_b = FieldElement_quick(b, semantic)
+    gf_a = FieldElement(a, semantic)
+    gf_b = FieldElement(b, semantic)
 
     product = gf_a * gf_b
     return product.to_block()
@@ -145,18 +149,73 @@ function padding_oracle(jsonContent::Dict)
     return base64encode(result)
 end
 
+function polynomial_add(jsonContent::Dict)
+    A::Array{String} = jsonContent["A"]
+    B::Array{String} = jsonContent["B"]
+
+    poly_A = Polynomial(A)
+    poly_B = Polynomial(B)
+
+    return (poly_A + poly_B).repr()
+end
+
+function polynomial_mul(jsonContent::Dict)
+    A::Array{String} = jsonContent["A"]
+    B::Array{String} = jsonContent["B"]
+
+    poly_A = Polynomial(A)
+    poly_B = Polynomial(B)
+
+    return (poly_A * poly_B).repr()
+end
+
+function polynomial_pow(jsonContent::Dict)
+    A::Array{String} = jsonContent["A"]
+    B::Int = jsonContent["k"]
+
+    poly_A = Polynomial(A)
+    return (poly_A ^ B).repr()
+end
+
+function polynomial_div(jsonContent::Dict)
+    A::String = jsonContent["a"]
+    B::String = jsonContent["b"]
+
+    a = FieldElement(A, from_string("gcm"))
+    b = FieldElement(B, from_string("gcm"))
+    #c = a / b
+    #return c.to_block()
+    return "result"
+end
+
+function polynomial_divmod(jsonContent::Dict)
+    A::Array{String} = jsonContent["A"]
+    B::Array{String} = jsonContent["B"]
+
+    poly_A = Polynomial(A)
+    poly_B = Polynomial(B)
+
+    #result = poly_A ÷ poly_B
+    #return result[1].repr(), result[2].repr()
+    return "result", "result"
+end
 
 ACTIONS::Dict{String, Vector{Any}} = Dict(
     "add_numbers" => [add_numbers, ["sum"]],
     "subtract_numbers" => [subtract_numbers, ["difference"]],
     "poly2block" => [poly2block, ["block"]],
     "block2poly" => [block2poly, ["coefficients"]],
-    "gfmul" => [gfmul, ["polynomial"]],
-    "sea128" => [sea128, ["ciphertext"]],
-    "xex" => [xex, ["ciphertext"]],
+    "gfmul" => [gfmul, ["product"]],
+    "sea128" => [sea128, ["output"]],
+    "xex" => [xex, ["output"]],
     "gcm_encrypt" => [gcm_encrypt, ["ciphertext", "tag", "L", "H"]],
     "gcm_decrypt" => [gcm_decrypt, ["authentic", "plaintext"]],
     "padding_oracle" => [padding_oracle, ["plaintext"]],
+    "gfpoly_add" => [polynomial_add, ["S"]],
+    "gfpoly_mul" => [polynomial_mul, ["P"]],
+    "gfpoly_pow" => [polynomial_pow, ["Z"]],
+    "gfdiv" => [polynomial_div, ["q"]],
+    "gfpoly_divmod" => [polynomial_divmod, ["Q", "R"]],
 )
 
 function process(jsonContent::Dict)
@@ -198,4 +257,5 @@ function process(jsonContent::Dict)
     println(JSON.json(Dict("responses" => result_testcases)))
 
 end
+
 end

@@ -248,6 +248,67 @@
          "iv":"j/YTn+2VIxEnPhjSKqBJCA==",
          "ciphertext":"VUamnKUs7CalB27Uz/+HDwqrk77W/y9rGu0zp76QHRVSXeyckEDjjxgNQvSQ7uzePFtlFxs9O5c1BQHmlmA65ndNNTbOrtU/vLDEJBxqCZ0="
       }
+    },
+    "polynomial_add": {
+      "action": "gfpoly_add",
+      "arguments": {
+        "A": [
+          "NeverGonnaGiveYouUpAAA==",
+          "NeverGonnaLetYouDownAA==",
+          "NeverGonnaRunAroundAAA==",
+          "AndDesertYouAAAAAAAAAA=="
+        ],
+        "B": [
+          "KryptoanalyseAAAAAAAAA==",
+          "DHBWMannheimAAAAAAAAAA=="
+        ]
+      }
+    },
+    "gfpoly_mul": {
+      "action": "gfpoly_mul",
+      "arguments": {
+        "A": [
+          "JAAAAAAAAAAAAAAAAAAAAA==",
+          "wAAAAAAAAAAAAAAAAAAAAA==",
+          "ACAAAAAAAAAAAAAAAAAAAA=="
+        ],
+        "B": [
+          "0AAAAAAAAAAAAAAAAAAAAA==",
+          "IQAAAAAAAAAAAAAAAAAAAA=="
+        ]
+      }
+    },
+    "gfpoly_pow": {
+      "action": "gfpoly_pow",
+      "arguments": {
+        "A": [
+          "JAAAAAAAAAAAAAAAAAAAAA==",
+          "wAAAAAAAAAAAAAAAAAAAAA==",
+          "ACAAAAAAAAAAAAAAAAAAAA=="
+        ],
+        "k": 3
+      }
+    },
+    "gfdiv": {
+      "action": "gfdiv",
+      "arguments": {
+        "a": "JAAAAAAAAAAAAAAAAAAAAA==",
+        "b": "wAAAAAAAAAAAAAAAAAAAAA==" 
+      }
+    },
+    "gfpoly_divmod": {
+      "action": "gfpoly_divmod",
+      "arguments": {
+        "A": [
+          "JAAAAAAAAAAAAAAAAAAAAA==",
+          "wAAAAAAAAAAAAAAAAAAAAA==",
+          "ACAAAAAAAAAAAAAAAAAAAA=="
+        ],
+        "B": [
+          "0AAAAAAAAAAAAAAAAAAAAA==",
+          "IQAAAAAAAAAAAAAAAAAAAA=="
+        ]
+      }
     }
   }
 }
