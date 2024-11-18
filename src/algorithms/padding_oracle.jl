@@ -19,7 +19,7 @@ function attack_block(hostname::String, port::Int, block::Array{UInt8}, previous
     write(client.connection, block)  # Send the block to be decrypted
     
     plaintext_block = zeros(UInt8, length(block))
-    num_ivs::UInt16 = 128
+    num_ivs::UInt16 = 256
     x_values = UInt8[]
 
     for current_byte in length(block):-1:1
