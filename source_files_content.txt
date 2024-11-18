@@ -11,7 +11,9 @@ Directory Structure:
         📁 math/
             📄 galois.jl.bak
             📄 galois_fast.jl (Content follows below)
+            📄 polynom.jl (Content follows below)
         📁 testing/
+            📄 padding_notes.txt (Content follows below)
             📄 performance_arr_to_int.jl (Content follows below)
             📄 performance_int_semantic.jl (Content follows below)
             📄 performance_multiply.jl (Content follows below)
@@ -21,6 +23,7 @@ Directory Structure:
         📄 Krypto.jl (Content follows below)
     📄 Manifest.toml
     📄 Project.toml
+    📄 README.md
     📄 kauma
     📄 sample.json
     📄 sample_small.json
@@ -52,7 +55,7 @@ function main()
     end
     
     jsonContent = JSON.parsefile(file)
-    @time process(jsonContent)
+    process(jsonContent)
 end
 
 
@@ -98,7 +101,7 @@ include("../math/galois_fast.jl")
 using Nettle
 using Base64
 using .Sea128: encrypt_sea, decrypt_sea
-using .Galois_quick: FieldElement_quick
+using .Galois_quick: FieldElement
 
 
 arr_to_int(arr::Array{UInt8}) = reinterpret(UInt128, reverse(arr))[1]
@@ -109,14 +112,14 @@ function ghash(key::Array{UInt8}, nonce::Array{UInt8}, text::Array{UInt8}, ad::A
 
     enc_func = algorithm == "aes128" ? encrypt : encrypt_sea 
     auth_key = enc_func("aes128", key, zeros(UInt8, 16))
-    auth_key = FieldElement_quick(arr_to_int(auth_key), SemanticTypes.GCM)
+    auth_key = FieldElement(arr_to_int(auth_key), SemanticTypes.GCM)
 
     len_block = vcat(
         reverse(reinterpret(UInt8, [length(ad) << 3])),
         reverse(reinterpret(UInt8, [length(text) << 3]))
     )
     
-    Y = FieldElement_quick(UInt128(0), SemanticTypes.GCM)
+    Y = FieldElement(UInt128(0), SemanticTypes.GCM)
     data = [pad_array(ad); pad_array(text); len_block]
 
     for i in 1:16:(length(data) - 1)
@@ -170,7 +173,9 @@ File: src/algorithms/padding_oracle.jl
 module PaddingOracle
 
 using Sockets 
-
+using Base: zeros
+using Base64
+using Nettle
 
 struct PaddingClient
     connection::TCPSocket
@@ -181,73 +186,88 @@ function PaddingClient(hostname::String, port::Int)
     return PaddingClient(client)
 end
 
+function attack_block(hostname::String, port::Int, block::Array{UInt8}, previous_block::Array{UInt8})
+    client = PaddingClient(hostname, port)
+    write(client.connection, block)  # Send the block to be decrypted
+    
+    plaintext_block = zeros(UInt8, length(block))
+    num_ivs::UInt16 = 128
+    x_values = UInt8[]
+
+    for current_byte in length(block):-1:1
+
+        known_iv = zeros(UInt8, 16 - current_byte)
+        for i in 1:16-current_byte
+            known_iv[i] = x_values[i] ⊻ (17 - current_byte)
+        end
+        z_array::Array{UInt8} = zeros(UInt8, current_byte - 1)
 
 
-function send_to_server(a::PaddingClient, data::Array{UInt8})
-    write(a.connection, data)
-end
+        found_iv = false
+        for current_iv_block in 0:num_ivs:255
+            write(client.connection, UInt8[num_ivs & 0xFF,num_ivs >> 8])
 
+            ivs = zeros(UInt8, num_ivs << 4)
+            @inbounds for (block_iv_num, total_iv_num) in enumerate((current_iv_block:current_iv_block+num_ivs-1))
+                #=
+                This loop is a bit shitty. The ivs array could be created on the very top
+                and always just changed a bit. But this is easier.
+                =#
+                base_idx = (block_iv_num-1) << 4 + 1
+                ivs[base_idx+length(z_array)] = UInt8(total_iv_num)
+                ivs[base_idx+length(z_array)+1 : base_idx+15] .= known_iv
+            end
 
-function generate_ivs(padding_length::Int, decrypted_bytes::Array{UInt8}, original_iv::Array{UInt8}=zeros(UInt8, 16))
-    ivs = UInt8[]  # Initialize an empty array to hold the concatenated IVs
+            write(client.connection, ivs)
+            response = read(client.connection, num_ivs)
 
-    for i in 0:255
-        # Copy the original IV to modify it for each attempt
-        iv = copy(original_iv)
+            for response_ind in eachindex(response)
+                if response[response_ind] == 0x01
+                    valid_padding_at = response_ind + current_iv_block - 1
+                    result_padding = (17 - current_byte)
+                    xi = valid_padding_at ⊻ result_padding
+                    pushfirst!(x_values, xi)
 
-        # Adjust the known decrypted bytes to conform to the current padding length
-        for j in 1:(padding_length - 1)
-            position = 16 - (j - 1)
-            iv[position] = iv[position] ⊻ decrypted_bytes[end - (j - 1)] ⊻ UInt8(padding_length)
+                    decrypted_byte::UInt8 = previous_block[current_byte] ⊻ xi
+                    plaintext_block[current_byte] = decrypted_byte
+                    found_iv = true
+                    break;
+                end
+            end
+
+            if found_iv
+                break;
+            end
         end
 
-        # Modify the byte we're currently attacking
-        position = 16 - (padding_length - 1)
-        iv[position] = iv[position] ⊻ UInt8(i) ⊻ UInt8(padding_length)
-
-        # Append the modified IV to the list
-        append!(ivs, iv)
     end
 
-    return ivs
+    close(client.connection)
+    return plaintext_block
 end
 
-
-function attack_block(client::PaddingClient, block::Array{UInt8})
-    write(client.connection, block)
-
-    dec_block = Array{UInt8}(undef, 0)
-
-    num_ivs::UInt8 = 255
-
-    for i in 1:length(block)
-        write(client.connection, UInt8[num_ivs,00])
-        ivs = generate_ivs(num_ivs, dec_block)
-        println(ivs)
-        write(client.connection, ivs)
-    end
-
-    return dec_block
+function de_pad(plaintext::Array{UInt8})
+    return plaintext[1:end-plaintext[end]]
 end
 
 
 function padding_attack(hostname::String, port::Int, iv::Array{UInt8}, ciphertext::Array{UInt8})
-    client = PaddingClient(hostname, port)
-
     plaintext = Array{UInt8}(undef, 0)
+    text = [iv; ciphertext]
 
-    for i in 1:16:length(ciphertext)
-        block = ciphertext[i:i+15]
-        append!(plaintext, attack_block(client, block))
+    for i in 16:16:length(text)-16
+        block_to_decrypt = text[i+1:i+16]
+        previous_block = text[i-15:i]
+        decrypted_block = attack_block(hostname, port, block_to_decrypt, previous_block)
+        append!(plaintext, decrypted_block)
     end
 
-    return plaintext
+    return de_pad(plaintext)
 end
 
 
+
 end
-
-
 
 ===========================================
 File: src/algorithms/sea128.jl
@@ -315,13 +335,13 @@ module Galois_quick
 using ..SemanticTypes: Semantic, GCM, XEX
 using Base64
 
-import Base: +, *, ⊻, <<, >>, %, show, length
+import Base: +, *, ⊻, <<, >>, %, show, length, /
 
-struct FieldElement_quick
+struct FieldElement
     value::UInt128
     semantic::Semantic
 
-    function FieldElement_quick(value::UInt128, semantic::Semantic, skip_mani::Bool=false)
+    function FieldElement(value::UInt128, semantic::Semantic, skip_mani::Bool=false)::FieldElement
         new(value, semantic)
     end
 end
@@ -331,21 +351,21 @@ const MASK_128 = UInt128(1) << 127
 
 const BIT_REVERSE_TABLE = UInt8[0, 128, 64, 192, 32, 160, 96, 224, 16, 144, 80, 208, 48, 176, 112, 240, 8, 136, 72, 200, 40, 168, 104, 232, 24, 152, 88, 216, 56, 184, 120, 248, 4, 132, 68, 196, 36, 164, 100, 228, 20, 148, 84, 212, 52, 180, 116, 244, 12, 140, 76, 204, 44, 172, 108, 236, 28, 156, 92, 220, 60, 188, 124, 252, 2, 130, 66, 194, 34, 162, 98, 226, 18, 146, 82, 210, 50, 178, 114, 242, 10, 138, 74, 202, 42, 170, 106, 234, 26, 154, 90, 218, 58, 186, 122, 250, 6, 134, 70, 198, 38, 166, 102, 230, 22, 150, 86, 214, 54, 182, 118, 246, 14, 142, 78, 206, 46, 174, 110, 238, 30, 158, 94, 222, 62, 190, 126, 254, 1, 129, 65, 193, 33, 161, 97, 225, 17, 145, 81, 209, 49, 177, 113, 241, 9, 137, 73, 201, 41, 169, 105, 233, 25, 153, 89, 217, 57, 185, 121, 249, 5, 133, 69, 197, 37, 165, 101, 229, 21, 149, 85, 213, 53, 181, 117, 245, 13, 141, 77, 205, 45, 173, 109, 237, 29, 157, 93, 221, 61, 189, 125, 253, 3, 131, 67, 195, 35, 163, 99, 227, 19, 147, 83, 211, 51, 179, 115, 243, 11, 139, 75, 203, 43, 171, 107, 235, 27, 155, 91, 219, 59, 187, 123, 251, 7, 135, 71, 199, 39, 167, 103, 231, 23, 151, 87, 215, 55, 183, 119, 247, 15, 143, 79, 207, 47, 175, 111, 239, 31, 159, 95, 223, 63, 191, 127, 255]
 
-@inline Base.:⊻(a::FieldElement_quick, b::FieldElement_quick) = FieldElement_quick(a.value ⊻ b.value, a.semantic)
-@inline Base.:⊻(a::FieldElement_quick, b::UInt128) = FieldElement_quick(a.value ⊻ b, a.semantic)
-@inline Base.:>>(a::FieldElement_quick, b::Int) = FieldElement_quick(a.value >> b, a.semantic)
-@inline Base.:>>(a::FieldElement_quick, b::Int) = FieldElement_quick(a.value >> b, a.semantic)
-@inline Base.:%(a::FieldElement_quick, b::UInt128) = FieldElement_quick(a.value % b, a.semantic)
-@inline Base.:%(a::FieldElement_quick, b::FieldElement_quick) = FieldElement_quick(a.value % b.value, a.semantic)
-@inline Base.show(io::IO, a::FieldElement_quick) = print(io, "FieldElement($(a.value), $(a.semantic))")
-@inline bit_string(a::FieldElement_quick) = join(reverse(digits(a.value, base=2, pad=128)))
-@inline to_polynomial(a::FieldElement_quick) = [x for x in 0:127 if (a.value >> x) % 2 == 1]
-@inline get_bytes(a::FieldElement_quick) = base64decode(a.to_block())
-@inline Base.:+(a::FieldElement_quick, b::FieldElement_quick) = FieldElement_quick(a.value ⊻ b.value, a.semantic)
+@inline Base.:⊻(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value ⊻ b.value, a.semantic)
+@inline Base.:⊻(a::FieldElement, b::UInt128)::FieldElement = FieldElement(a.value ⊻ b, a.semantic)
+@inline Base.:>>(a::FieldElement, b::Int)::FieldElement = FieldElement(a.value >> b, a.semantic)
+@inline Base.:>>(a::FieldElement, b::Int)::FieldElement = FieldElement(a.value >> b, a.semantic)
+@inline Base.:%(a::FieldElement, b::UInt128)::FieldElement = FieldElement(a.value % b, a.semantic)
+@inline Base.:%(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value % b.value, a.semantic)
+@inline Base.show(io::IO, a::FieldElement)::Nothing = print(io, "FieldElement($(a.value), $(a.semantic))")
+@inline bit_string(a::FieldElement)::String = join(reverse(digits(a.value, base=2, pad=128)))
+@inline to_polynomial(a::FieldElement)::Array{UInt8} = [x for x in 0:127 if (a.value >> x) % 2 == 1]
+@inline get_bytes(a::FieldElement)::Vector{UInt8} = base64decode(a.to_block())
+@inline Base.:+(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value ⊻ b.value, a.semantic, true)
 
 
 
-@inline function int_to_semantic(x::UInt128, semantic::Semantic)
+@inline function int_to_semantic(x::UInt128, semantic::Semantic)::UInt128
     if semantic == GCM
         return bitreverse(x)
     elseif semantic == XEX
@@ -367,11 +387,11 @@ end
 
 
 
-function FieldElement_quick(x::UInt128, semantic::Semantic)
-    FieldElement_quick(int_to_semantic(x, semantic), semantic, true)
+function FieldElement(x::UInt128, semantic::Semantic)::FieldElement
+    FieldElement(int_to_semantic(x, semantic), semantic, true)
 end
 
-function FieldElement_quick(poly::Array{UInt8}, semantic::Semantic)
+function FieldElement(poly::Array{UInt8}, semantic::Semantic)::FieldElement
     aggregate::UInt128 = 0
     one::UInt128 = 1
     for i in poly
@@ -379,29 +399,29 @@ function FieldElement_quick(poly::Array{UInt8}, semantic::Semantic)
             aggregate |= (one << i)
         end
     end
-    FieldElement_quick(aggregate, semantic, true)
+    FieldElement(aggregate, semantic, true)
 end
 
-function FieldElement_quick(base64::String, semantic::Semantic)
+function FieldElement(base64::String, semantic::Semantic)::FieldElement
     a_array = base64decode(base64)
     value::UInt128 = uint8_to_uint128(a_array)
-    FieldElement_quick(int_to_semantic(value, semantic), semantic, true)
+    FieldElement(int_to_semantic(value, semantic), semantic, true)
 end
 
 
 
-function Base.:+(a::FieldElement_quick, b::Vector{UInt8})
+function Base.:+(a::FieldElement, b::Vector{UInt8})::FieldElement
 
     length(b) == 16 || throw(ArgumentError("Input must be exactly 16 bytes"))
 
     value = uint8_to_uint128(b)
     int_value = int_to_semantic(value, a.semantic)
 
-    return FieldElement_quick(int_value ⊻ a.value, a.semantic, true)
+    return FieldElement(int_value ⊻ a.value, a.semantic, true)
 end
 
 
-function Base.:*(a::FieldElement_quick, b::FieldElement_quick)
+function Base.:*(a::FieldElement, b::FieldElement)::FieldElement
     aggregate = UInt128(0)
     tmp_a::UInt128 = a.value
     tmp_b::UInt128 = b.value
@@ -422,11 +442,41 @@ function Base.:*(a::FieldElement_quick, b::FieldElement_quick)
         aggregate ⊻= tmp_a * (tmp_b & UInt128(1))
     end
     
-    return FieldElement_quick(aggregate, a.semantic, true)
+    return FieldElement(aggregate, a.semantic, true)
 end
 
 
-function to_block(a::FieldElement_quick)
+
+function Base.:/(a::FieldElement, b::FieldElement)::FieldElement # http://www.ee.unb.ca/cgi-bin/tervo/calc.pl?num=100100101010101011011111000111&den=1111001110010101&f=d&e=1&p=1&m=1
+    if b.value == 0
+        throw(ErrorException("Division by zero"))
+    end
+    if a.value == 0
+        return FieldElement(UInt128(0), a.semantic, true)
+    end
+    if b.value == 1
+        return a
+    end
+
+    numerator = a.value
+    denominator = b.value
+    quotient = UInt128(0)
+
+    numerator_degree = 127 - leading_zeros(numerator)
+    denominator_degree = 127 - leading_zeros(denominator)
+
+    while numerator >= denominator
+        shift = numerator_degree - denominator_degree
+        shifted_divisor = denominator << shift
+        numerator = numerator ⊻ shifted_divisor
+        quotient |= UInt128(1) << shift
+        numerator_degree = 127 - leading_zeros(numerator)
+    end
+    return FieldElement(quotient, a.semantic, true)
+end
+
+
+function to_block(a::FieldElement)::String
     bytes = Vector{UInt8}(undef, 16)
     value::UInt128 = a.value
 
@@ -442,8 +492,13 @@ function to_block(a::FieldElement_quick)
 end
 
 
+function is_zero(a::FieldElement)::Bool
+    return a.value == 0
+end
+
+
 import Base: getproperty
-@inline function getproperty(gf::FieldElement_quick, sym::Symbol)
+@inline function getproperty(gf::FieldElement, sym::Symbol)
     if sym === :bit_string
         return () -> bit_string(gf)
     end
@@ -453,15 +508,272 @@ import Base: getproperty
     if sym === :to_polynomial
         return () -> to_polynomial(gf)
     end
+    if sym === :is_zero
+        return () -> is_zero(gf)
+    end
     return getfield(gf, sym)
 end
 
 
+
+
+
 end
 
 
 
 
+
+===========================================
+File: src/math/polynom.jl
+===========================================
+
+module Polynom
+
+
+
+include("../util/semantic_types.jl")
+using .SemanticTypes: Semantic, from_string
+using Base64
+
+include("galois_fast.jl")
+using .Galois_quick: FieldElement
+
+import Base: +, *, ⊻, <<, >>, %, show, length, ^, ÷, /
+
+struct Polynomial
+    coefficients::Array{FieldElement}
+    power::Int
+
+    function Polynomial(coefficients::Array{FieldElement})::Polynomial
+        new(coefficients, length(coefficients))
+    end
+end
+
+function Polynomial(coefficients::Array{String})::Polynomial
+    elements::Array{FieldElement} = [FieldElement(x, from_string("gcm")) for x in coefficients]
+    return Polynomial(elements)   # Probably have to reverse the coefficients
+end
+
+
+function reduce_polynomial(p::Polynomial)::Polynomial
+    new_power = p.power
+    while new_power > 0 && p.coefficients[new_power].value == 0
+        new_power -= 1
+    end
+    
+    if new_power == p.power
+        return p
+    end
+    
+    return Polynomial(p.coefficients[1:new_power])
+end
+
+
+function Base.:+(a::Polynomial, b::Polynomial)::Polynomial
+
+    max_power = max(a.power, b.power)
+    longer, shorter = a.power > b.power ? (a, b) : (b, a)
+    result_coefficients::Array{FieldElement} = Array{FieldElement}(undef, max_power)
+
+    for i in 1:max_power
+        if i <= shorter.power
+            result_coefficients[i] = longer.coefficients[i] + shorter.coefficients[i]
+        else
+            result_coefficients[i] = longer.coefficients[i]
+        end
+    end
+
+    return Polynomial(result_coefficients).reduce()
+end
+
+function Base.:*(a::Polynomial, b::Polynomial)::Polynomial
+    result_coefficients::Array{FieldElement} = Array{FieldElement}(undef, a.power + b.power)
+    for i in 1:length(result_coefficients)
+        result_coefficients[i] = FieldElement(UInt128(0), from_string("gcm"))
+    end
+
+    for i in 1:a.power
+        for j in 1:b.power
+            result_coefficients[i+j - 1] += a.coefficients[i] * b.coefficients[j]
+        end
+    end
+    return Polynomial(result_coefficients).reduce()
+end
+
+function Base.:^(a::Polynomial, b::Int)::Polynomial
+    if b == 0
+        return Polynomial([FieldElement(UInt128(1), from_string("gcm"), true)])
+    end
+    
+    result = Polynomial([FieldElement(UInt128(1), from_string("gcm"), true)])
+    base = a
+    exponent = b
+
+    while exponent > 0
+        if exponent & 1 == 1
+            result *= base
+        end
+        base *= base
+        exponent >>= 1
+    end
+
+    return result.reduce()
+end
+
+
+# Overload the division operator to perform polynomial long division
+# Returns a tuple (quotient, remainder)
+function ÷(a::Polynomial, b::Polynomial)::Tuple{Polynomial, Polynomial}
+
+    if b.power < 0 || all(fe.value == 0 for fe in b.coefficients)
+        error("Division by zero polynomial is not allowed.")
+    end
+
+    dividend = a.coefficients
+    divisor = b.coefficients
+
+    deg_dividend = a.power
+    deg_divisor = b.power
+
+    if deg_divisor > deg_dividend
+        return Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)]), a
+    end
+
+    quotient = [FieldElement(UInt128(0), from_string("gcm"), true) for _ in 1:(deg_dividend - deg_divisor + 1)]
+
+    while length(dividend) >= length(divisor)
+        leading_term = dividend[end] / divisor[end]
+        quotient[length(dividend) - length(divisor) + 1] = leading_term
+
+        # Subtract the scaled divisor from the dividend
+
+        for i in 1:length(divisor)
+            dividend[length(dividend) - length(divisor) + i] += leading_term * divisor[i]
+        end
+
+        # Remove leading zeros
+        dividend = dividend.reduce()
+    end
+
+    return Polynomial(quotient), a - Polynomial(quotient) * b
+end
+
+
+function repr(p::Polynomial)::Array{String}
+    return [gfe.to_block() for gfe in p.coefficients]
+end
+
+
+import Base: getproperty
+@inline function getproperty(p::Polynomial, sym::Symbol)
+    if sym === :repr
+        return () -> repr(p)
+    end
+    if sym === :reduce
+        return () -> reduce_polynomial(p)
+    end
+    return getfield(p, sym)
+end
+
+end
+
+===========================================
+File: src/testing/padding_notes.txt
+===========================================
+
+XXXXXXXXXXXXXXXX
+XOR
+YYYYYYYYYYYYYYYY
+=
+HALLOHALLOHALLOH
+
+H ^ ? = 2
+H ^ 2 = ?
+
+
+XXXXXXXXXXXXXXXX
+XOR
+---------------6
+=
+---------------1
+
+X ^ 6 = 1
+X ^ Y = H
+
+H = ?
+X = ?
+
+6 ^ 1 = X
+X ^ Y = H
+
+(6 ^ 1) ^ Y = H
+
+
+
+H ^ Y = X
+
+Y ^ X = H
+? ^ X = i
+
+X = Y ^ H
+X = i ^ ?
+
+
+
+
+
+XXXXXXXXXXXXXXXX = ?
+XOR
+YYYYYYYYYYYYYYYY
+=
+HALLOHALLOHALLOH = ?
+
+
+XXXXXXXXXXXXXXXX
+XOR
+---------------6
+=
+---------------1
+
+XXXXXXXXXXXXXXXX
+XOR
+--------------??
+=
+--------------22
+
+X ^ 6 = 1
+X ^ ? = 2
+
+X = 6 ^ 1
+(6 ^ 1) ^ 2 = ? = 5
+
+
+XXXXXXXXXXXXXXXX
+XOR
+--------------?5
+=
+--------------22
+
+
+
+XXXXXXXXXXXXXXXX
+XOR
+--------------85
+=
+--------------22
+
+X2 = ?
+O = ? 
+
+X2 ^ 8 = 2
+8 ^ 2 = X2
+
+O = X2 ^ Y2 = Y2 ^ (8 ^ 2)
+
+
+8 ^ ? = 3
+5 ^ ? = 3
 
 ===========================================
 File: src/testing/performance_arr_to_int.jl
@@ -608,7 +920,7 @@ using Base.Threads
 const GF128_MODULUS = UInt128(0x87)  # Standard GF(2^128) modulus
 
 # Original struct definition modified to use only UInt128
-struct FieldElement_quick
+struct FieldElement
     value::UInt128
     semantic::Symbol  # Using Symbol instead of String for better performance
     reduced::Bool
@@ -617,7 +929,7 @@ end
 
 
 # Original multiplication function
-@inline function mult_original(a::FieldElement_quick, b::FieldElement_quick)
+@inline function mult_original(a::FieldElement, b::FieldElement)
     aggregate = UInt128(0)
     tmp_a::UInt128 = a.value
     tmp_b::UInt128 = b.value
@@ -637,12 +949,12 @@ end
         end
     end
     
-    return FieldElement_quick(aggregate, a.semantic, true)
+    return FieldElement(aggregate, a.semantic, true)
 end
 
 
 # SIMD-optimized version (experimental)
-@inline function mult_safe(a::FieldElement_quick, b::FieldElement_quick)
+@inline function mult_safe(a::FieldElement, b::FieldElement)
     aggregate = UInt128(0)
     tmp_a::UInt128 = a.value
     tmp_b::UInt128 = b.value
@@ -662,7 +974,7 @@ end
         end
     end
     
-    return FieldElement_quick(aggregate, a.semantic, true)
+    return FieldElement(aggregate, a.semantic, true)
 end
 
 
@@ -675,8 +987,8 @@ end
 # Benchmark setup
 function run_benchmarks()
     # Generate random test values
-    test_a = FieldElement_quick(rand(UInt128), :xex, true)
-    test_b = FieldElement_quick(rand(UInt128), :xex, true)
+    test_a = FieldElement(rand(UInt128), :xex, true)
+    test_b = FieldElement(rand(UInt128), :xex, true)
     
     # Verify correctness
     result_original = mult_original(test_a, test_b)
@@ -699,8 +1011,8 @@ function run_benchmarks()
     
     # Additional stress test
     stress_test_size = 10000
-    test_data = [(FieldElement_quick(rand(UInt128), :gcm, true), 
-                  FieldElement_quick(rand(UInt128), :gcm, true)) 
+    test_data = [(FieldElement(rand(UInt128), :gcm, true), 
+                    FieldElement(rand(UInt128), :gcm, true)) 
                  for _ in 1:stress_test_size]
     
     println("\nStress test with $stress_test_size random pairs:")
@@ -732,12 +1044,16 @@ using Base64
 include("../util/semantic_types.jl")
 using .SemanticTypes: Semantic, from_string
 include("../math/galois_fast.jl")
+using .Galois_quick: FieldElement
+include("../math/polynom.jl")
+using .Polynom: Polynomial
 include("../algorithms/sea128.jl")
 include("../algorithms/xex_fde.jl")
 include("../algorithms/gcm.jl")
 include("../algorithms/padding_oracle.jl")
-using .PaddingOracle: PaddingClient, send_to_server, padding_attack
-using .Galois_quick: FieldElement_quick
+using .PaddingOracle: PaddingClient, padding_attack
+using .Galois_quick: FieldElement
+using .Polynom: Polynomial
 using .Sea128: encrypt_sea, decrypt_sea
 using .FDE: encrypt_fde, decrypt_fde
 using .GCM: encrypt_gcm, decrypt_gcm
@@ -756,7 +1072,7 @@ end
 function poly2block(jsonContent::Dict)
     coefficients::Array{UInt8} = jsonContent["coefficients"]
     semantic = from_string(jsonContent["semantic"])
-    gf = FieldElement_quick(coefficients, semantic)
+    gf = FieldElement(coefficients, semantic)
     return gf.to_block()
 end
 
@@ -764,7 +1080,7 @@ function block2poly(jsonContent::Dict)
     semantic = from_string(jsonContent["semantic"])
     block::String = jsonContent["block"]
 
-    gf = FieldElement_quick(block, semantic)
+    gf = FieldElement(block, semantic)
 
     result = gf.to_polynomial()
     return result
@@ -775,8 +1091,8 @@ function gfmul(jsonContent::Dict)
     a::String = jsonContent["a"]
     b::String = jsonContent["b"]
 
-    gf_a = FieldElement_quick(a, semantic)
-    gf_b = FieldElement_quick(b, semantic)
+    gf_a = FieldElement(a, semantic)
+    gf_b = FieldElement(b, semantic)
 
     product = gf_a * gf_b
     return product.to_block()
@@ -860,12 +1176,67 @@ end
 
 function padding_oracle(jsonContent::Dict)
     hostname::String = jsonContent["hostname"]
+    if hostname == "localhost"
+        hostname = "127.0.0.1"
+    end
     port::Int = jsonContent["port"]
     iv::Array{UInt8} = base64decode(jsonContent["iv"])
     ciphertext::Array{UInt8} = base64decode(jsonContent["ciphertext"])
-    return padding_attack("127.0.0.1", port, iv, ciphertext)
+    #result = padding_attack(hostname, port, iv, ciphertext)
+    result = "plaintext"
+    return base64encode(result)
 end
 
+function polynomial_add(jsonContent::Dict)
+    A::Array{String} = jsonContent["A"]
+    B::Array{String} = jsonContent["B"]
+
+    poly_A = Polynomial(A)
+    poly_B = Polynomial(B)
+
+    return (poly_A + poly_B).repr()
+end
+
+function polynomial_mul(jsonContent::Dict)
+    A::Array{String} = jsonContent["A"]
+    B::Array{String} = jsonContent["B"]
+
+    poly_A = Polynomial(A)
+    poly_B = Polynomial(B)
+
+    return (poly_A * poly_B).repr()
+end
+
+function polynomial_pow(jsonContent::Dict)
+    A::Array{String} = jsonContent["A"]
+    B::Int = jsonContent["k"]
+
+    poly_A = Polynomial(A)
+    return (poly_A ^ B).repr()
+end
+
+function polynomial_div(jsonContent::Dict)
+    A::String = jsonContent["a"]
+    B::String = jsonContent["b"]
+
+    a = FieldElement(A, from_string("gcm"))
+    b = FieldElement(B, from_string("gcm"))
+    #c = a / b
+    #return c.to_block()
+    return "result"
+end
+
+function polynomial_divmod(jsonContent::Dict)
+    A::Array{String} = jsonContent["A"]
+    B::Array{String} = jsonContent["B"]
+
+    poly_A = Polynomial(A)
+    poly_B = Polynomial(B)
+
+    #result = poly_A ÷ poly_B
+    #return result[1].repr(), result[2].repr()
+    return "result", "result"
+end
 
 ACTIONS::Dict{String, Vector{Any}} = Dict(
     "add_numbers" => [add_numbers, ["sum"]],
@@ -878,6 +1249,11 @@ ACTIONS::Dict{String, Vector{Any}} = Dict(
     "gcm_encrypt" => [gcm_encrypt, ["ciphertext", "tag", "L", "H"]],
     "gcm_decrypt" => [gcm_decrypt, ["authentic", "plaintext"]],
     "padding_oracle" => [padding_oracle, ["plaintext"]],
+    "gfpoly_add" => [polynomial_add, ["S"]],
+    "gfpoly_mul" => [polynomial_mul, ["P"]],
+    "gfpoly_pow" => [polynomial_pow, ["Z"]],
+    "gfdiv" => [polynomial_div, ["q"]],
+    "gfpoly_divmod" => [polynomial_divmod, ["Q", "R"]],
 )
 
 function process(jsonContent::Dict)
@@ -897,7 +1273,7 @@ function process(jsonContent::Dict)
         try
             result = ACTIONS[action][1](arguments)
         catch e
-            println("Error: $e")
+            println(stderr, "Error: $e")
         end
 
         json_result = Dict()
@@ -916,6 +1292,7 @@ function process(jsonContent::Dict)
     println(JSON.json(Dict("testcases" => result_testcases)))
 
 end
+
 end
 
 ===========================================
