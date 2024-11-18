@@ -193,7 +193,7 @@ function process(jsonContent::Dict)
         result_testcases[key] = json_result
     end
 
-    println(JSON.json(Dict("testcases" => result_testcases)))
+    println(JSON.json(Dict("responses" => result_testcases)))
 
 end
 end
