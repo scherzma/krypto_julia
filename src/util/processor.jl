@@ -166,12 +166,14 @@ function process(jsonContent::Dict)
     for (key, value) in jsonContent["testcases"]
         action = value["action"]
         arguments = value["arguments"]
-        output_key = ACTIONS[action][2]
 
         if !haskey(ACTIONS, action)
-            throw(ProcessingError("Unknown action: $action"))
+            #throw(ErrorException("Unknown action: $action"))
+            continue
         end
 
+
+        output_key = ACTIONS[action][2]
         result = nothing
         try
             result = ACTIONS[action][1](arguments)
