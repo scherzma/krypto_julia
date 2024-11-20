@@ -249,7 +249,7 @@
          "ciphertext":"VUamnKUs7CalB27Uz/+HDwqrk77W/y9rGu0zp76QHRVSXeyckEDjjxgNQvSQ7uzePFtlFxs9O5c1BQHmlmA65ndNNTbOrtU/vLDEJBxqCZ0="
       }
     },
-    "polynomial_add": {
+    "polynomial_add_zero": {
       "action": "gfpoly_add",
       "arguments": {
         "A": [
@@ -261,6 +261,23 @@
         "B": [
           "KryptoanalyseAAAAAAAAA==",
           "DHBWMannheimAAAAAAAAAA=="
+        ]
+      }
+    },
+    "polynomial_add": {
+      "action": "gfpoly_add",
+      "arguments": {
+        "A": [
+          "NeverGonnaGiveYouUpAAA==",
+          "NeverGonnaLetYouDownAA==",
+          "NeverGonnaRunAroundAAA==",
+          "AndDesertYouAAAAAAAAAA=="
+        ],
+        "B": [
+          "NeverGonnaGiveYouUpAAA==",
+          "NeverGonnaLetYouDownAA==",
+          "NeverGonnaRunAroundAAA==",
+          "AndDesertYouAAAAAAAAAA=="
         ]
       }
     },
