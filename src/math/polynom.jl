@@ -95,6 +95,36 @@ function Base.:^(a::Polynomial, b::Int)::Polynomial
     return result.reduce()
 end
 
+function inverse(a::Polynomial, p::Polynomial)::Polynomial
+    t = Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)])
+    newt = Polynomial([FieldElement(UInt128(1), from_string("gcm"), true)])
+    r = p
+    newr = a
+
+    while !all(fe.value == 0 for fe in newr.coefficients)
+        quotient, _ = r ÷ newr
+        r, newr = newr, r - quotient * newr
+        t, newt = newt, t - quotient * newt
+    end
+
+    if r.power > 0
+        error("Either p is not irreducible or a is a multiple of p")
+    end
+
+    # Multiply by multiplicative inverse of leading coefficient of r
+    inv_coeff = Polynomial([FieldElement(UInt128(1), from_string("gcm"), true) / r.coefficients[1]])
+    return inv_coeff * t
+end
+
+
+# Overload the division operator to perform polynomial division using inverse
+function Base.:/(a::Polynomial, b::Polynomial)::Polynomial
+    if b.power < 0 || all(fe.value == 0 for fe in b.coefficients)
+        error("Division by zero polynomial is not allowed.")
+    end
+    return a * inverse(b, Polynomial([FieldElement(UInt128(1), from_string("gcm"), true)]))
+end
+
 
 # Overload the division operator to perform polynomial long division
 # Returns a tuple (quotient, remainder)

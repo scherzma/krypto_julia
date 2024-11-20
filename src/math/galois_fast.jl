@@ -4,7 +4,7 @@ module Galois_quick
 using ..SemanticTypes: Semantic, GCM, XEX
 using Base64
 
-import Base: +, *, ⊻, <<, >>, %, show, length, /
+import Base: +, *, ⊻, <<, >>, %, show, length, /, -, ÷
 
 struct FieldElement
     value::UInt128
@@ -114,9 +114,42 @@ function Base.:*(a::FieldElement, b::FieldElement)::FieldElement
     return FieldElement(aggregate, a.semantic, true)
 end
 
+function Base.:-(a::FieldElement, b::FieldElement)::FieldElement
+    return a + b
+end
 
 
-function Base.:/(a::FieldElement, b::FieldElement)::FieldElement # http://www.ee.unb.ca/cgi-bin/tervo/calc.pl?num=100100101010101011011111000111&den=1111001110010101&f=d&e=1&p=1&m=1
+function inverse(a::FieldElement, p::FieldElement)::FieldElement
+    t = FieldElement(UInt128(0), a.semantic, true)
+    newt = FieldElement(UInt128(1), a.semantic, true)
+    r = p
+    newr = a
+
+    while newr.value != 0
+        quotient = r ÷ newr
+        r, newr = newr, r - quotient * newr
+        t, newt = newt, t - quotient * newt
+    end
+
+    if r.value == 0
+        throw(ErrorException("Either p is not irreducible or a is a multiple of p"))
+    end
+
+    # Multiply by multiplicative inverse of leading coefficient of r
+    return t ÷ r
+end
+
+
+function Base.:/(a::FieldElement, b::FieldElement)::FieldElement
+    if b.value == 0
+        throw(ErrorException("Division by zero"))
+    end
+    return a * inverse(b, FieldElement(UInt128(1), a.semantic, true))
+end
+
+
+
+function Base.:÷(a::FieldElement, b::FieldElement)::FieldElement # http://www.ee.unb.ca/cgi-bin/tervo/calc.pl?num=100100101010101011011111000111&den=1111001110010101&f=d&e=1&p=1&m=1
     if b.value == 0
         throw(ErrorException("Division by zero"))
     end
@@ -141,7 +174,7 @@ function Base.:/(a::FieldElement, b::FieldElement)::FieldElement # http://www.ee
         quotient |= UInt128(1) << shift
         numerator_degree = 127 - leading_zeros(numerator)
     end
-    return FieldElement(quotient, a.semantic, true)
+    return FieldElement(numerator, a.semantic, true)
 end
 
 
