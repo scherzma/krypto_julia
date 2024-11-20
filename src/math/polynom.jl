@@ -35,6 +35,10 @@ function reduce_polynomial(p::Polynomial)::Polynomial
     if new_power == p.power
         return p
     end
+
+    if new_power == 0
+        return Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)])
+    end
     
     return Polynomial(p.coefficients[1:new_power])
 end
