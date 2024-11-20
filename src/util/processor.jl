@@ -145,8 +145,7 @@ function padding_oracle(jsonContent::Dict)
     port::Int = jsonContent["port"]
     iv::Array{UInt8} = base64decode(jsonContent["iv"])
     ciphertext::Array{UInt8} = base64decode(jsonContent["ciphertext"])
-    #result = padding_attack(hostname, port, iv, ciphertext)
-    result = "plaintext"
+    result = padding_attack(hostname, port, iv, ciphertext)
     return base64encode(result)
 end
 
