@@ -9,7 +9,7 @@ using Base64
 include("galois_fast.jl")
 using .Galois_quick: FieldElement
 
-import Base: +, *, ⊻, <<, >>, %, show, length, ^, ÷, /, copy, <, >, ==, isless
+import Base: +, *, ⊻, <<, >>, %, show, length, ^, ÷, /, copy, <, >, ==, isless, √
 
 struct Polynomial
     coefficients::Array{FieldElement}
@@ -184,6 +184,27 @@ function gfpoly_powmod(A::Polynomial, M::Polynomial, k::Integer)::Polynomial
     return result
 end
 
+
+function Base.:√(Q::Polynomial)::Polynomial
+
+    # Validate that Q has only even exponents with non-zero coefficients
+    for i in 0:(Q.power - 1)
+        if isodd(i) && Q.coefficients[i + 1].value != 0
+            throw(ArgumentError("Polynomial Q must have only even exponents with non-zero coefficients."))
+        end
+    end
+
+    # The degree of the square root polynomial S will be floor(Q.power / 2)
+    m = div(Q.power, 2)
+    S_coeffs = Vector{FieldElement}(undef, m + 1)
+
+    for i in 0:m
+        q_2i = Q.coefficients[2 * i + 1]
+        S_coeffs[i + 1] = √q_2i
+    end
+
+    return Polynomial(S_coeffs).reduce_pol()
+end
 
 
 function monic(A::Polynomial)::Polynomial

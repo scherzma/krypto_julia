@@ -193,9 +193,6 @@ function polynomial_divmod(jsonContent::Dict)
 
     poly_A = Polynomial(A)
     poly_B = Polynomial(B)
-    #println(poly_A)
-    #println(poly_B)
-
     result = poly_A / poly_B
     return result[1].repr(), result[2].repr()
 end
@@ -224,6 +221,12 @@ function polynomial_make_monic(jsonContent::Dict)
     return poly_A.monic().repr()
 end
 
+function polynomial_sqrt(jsonContent::Dict)
+    Q::Array{String} = jsonContent["Q"]
+    poly_Q = Polynomial(Q)
+    return (√poly_Q).repr()
+end
+
 ACTIONS::Dict{String, Vector{Any}} = Dict(
     "add_numbers" => [add_numbers, ["sum"]],
     "subtract_numbers" => [subtract_numbers, ["difference"]],
@@ -243,6 +246,7 @@ ACTIONS::Dict{String, Vector{Any}} = Dict(
     "gfpoly_powmod" => [polynomial_powmod, ["Z"]],
     "gfpoly_sort" => [polynomial_sort, ["sorted_polys"]],
     "gfpoly_make_monic" => [polynomial_make_monic, ["A*"]],
+    "gfpoly_sqrt" => [polynomial_sqrt, ["S"]],
 )
 
 function process(jsonContent::Dict)
