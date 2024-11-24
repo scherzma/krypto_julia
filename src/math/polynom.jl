@@ -185,6 +185,19 @@ function gfpoly_powmod(A::Polynomial, M::Polynomial, k::Integer)::Polynomial
 end
 
 
+
+function monic(A::Polynomial)::Polynomial
+    if A.power == 0 && A.coefficients[1].value == 0
+        throw(ArgumentError("Cannot make the zero polynomial monic"))
+    end
+    c = A.coefficients[A.power]
+    c_inv = c.inverse()
+    new_coeffs = [coeff * c_inv for coeff in A.coefficients]
+    return Polynomial(new_coeffs).reduce_pol()
+end
+
+
+
 function repr(p::Polynomial)::Array{String}
     return [gfe.to_block() for gfe in p.coefficients]
 end
@@ -197,6 +210,9 @@ import Base: getproperty
     end
     if sym === :reduce_pol
         return () -> reduce_pol(p)
+    end
+    if sym === :monic
+        return () -> monic(p)
     end
     return getfield(p, sym)
 end
