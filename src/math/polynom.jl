@@ -26,7 +26,7 @@ function Polynomial(coefficients::Array{String})::Polynomial
 end
 
 
-function reduce(p::Polynomial)::Polynomial
+function reduce_pol(p::Polynomial)::Polynomial
     new_power = p.power
     while new_power > 0 && p.coefficients[new_power].value == 0
         new_power -= 1
@@ -58,7 +58,7 @@ function Base.:+(a::Polynomial, b::Polynomial)::Polynomial
         end
     end
 
-    return Polynomial(result_coefficients).reduce()
+    return Polynomial(result_coefficients).reduce_pol()
 end
 
 function Base.:*(a::Polynomial, b::Polynomial)::Polynomial
@@ -72,7 +72,7 @@ function Base.:*(a::Polynomial, b::Polynomial)::Polynomial
             result_coefficients[i+j - 1] += a.coefficients[i] * b.coefficients[j]
         end
     end
-    return Polynomial(result_coefficients).reduce()
+    return Polynomial(result_coefficients).reduce_pol()
 end
 
 function Base.:^(a::Polynomial, b::Int)::Polynomial
@@ -92,7 +92,7 @@ function Base.:^(a::Polynomial, b::Int)::Polynomial
         exponent >>= 1
     end
 
-    return result.reduce()
+    return result.reduce_pol()
 end
 
 Base.copy(p::Polynomial) = Polynomial(copy(p.coefficients))
@@ -106,7 +106,7 @@ function Base.:/(a::Polynomial, b::Polynomial)::Tuple{Polynomial, Polynomial}
     # If the degree of a is less than b, quotient is 0 and remainder is a
     if a.power < b.power
         quotient = Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)])
-        remainder = reduce(a)
+        remainder = reduce_pol(a)
         return (quotient, remainder)
     end
 
@@ -143,12 +143,12 @@ function Base.:/(a::Polynomial, b::Polynomial)::Tuple{Polynomial, Polynomial}
         end
     end
 
-    quotient = Polynomial(quotient_coeffs).reduce()
+    quotient = Polynomial(quotient_coeffs).reduce_pol()
 
     if remainder_degree == 0 && remainder_coeffs[1].value == 0
         remainder = Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)])
     else
-        remainder = Polynomial(remainder_coeffs[1:remainder_degree]).reduce()
+        remainder = Polynomial(remainder_coeffs[1:remainder_degree]).reduce_pol()
     end
 
     return (quotient, remainder)
@@ -188,8 +188,8 @@ import Base: getproperty
     if sym === :repr
         return () -> repr(p)
     end
-    if sym === :reduce
-        return () -> reduce(p)
+    if sym === :reduce_pol
+        return () -> reduce_pol(p)
     end
     return getfield(p, sym)
 end
