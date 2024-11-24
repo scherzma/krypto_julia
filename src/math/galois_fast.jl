@@ -3,7 +3,6 @@ module Galois_quick
 
 using ..SemanticTypes: Semantic, GCM, XEX
 using Base64
-
 import Base: +, *, ⊻, <<, >>, %, show, length, /, -, ÷
 
 struct FieldElement
@@ -119,37 +118,40 @@ function Base.:-(a::FieldElement, b::FieldElement)::FieldElement
 end
 
 
-function inverse(a::FieldElement, p::FieldElement)::FieldElement
-    t = FieldElement(UInt128(0), a.semantic, true)
-    newt = FieldElement(UInt128(1), a.semantic, true)
-    r = p
-    newr = a
+function power(a::FieldElement, exponent::UInt128)::FieldElement
+    result = FieldElement(UInt128(1), a.semantic, true)  # Initialize to 1
+    base = a
 
-    while newr.value != 0
-        quotient = r ÷ newr
-        r, newr = newr, r - quotient * newr
-        t, newt = newt, t - quotient * newt
+    @inbounds for i in 0:127
+        if (exponent >> i) & 1 == 1
+            result = result * base
+        end
+        base = base * base
     end
 
-    if r.value == 0
-        throw(ErrorException("Either p is not irreducible or a is a multiple of p"))
-    end
+    return result
+end
 
-    # Multiply by multiplicative inverse of leading coefficient of r
-    return t ÷ r
+function inverse(a::FieldElement)::FieldElement
+    if is_zero(a)
+        throw(ArgumentError("Cannot invert the zero element"))
+    end
+    exponent = UInt128(~UInt128(0)) - UInt128(1)  # 2^128 - 2
+    return power(a, exponent)
 end
 
 
+# Corrected Division Function Using the Correct Inverse
 function Base.:/(a::FieldElement, b::FieldElement)::FieldElement
     if b.value == 0
         throw(ErrorException("Division by zero"))
     end
-    return a * inverse(b, FieldElement(UInt128(1), a.semantic, true))
+    return a * inverse(b)
 end
 
 
-
-function Base.:÷(a::FieldElement, b::FieldElement)::FieldElement # http://www.ee.unb.ca/cgi-bin/tervo/calc.pl?num=100100101010101011011111000111&den=1111001110010101&f=d&e=1&p=1&m=1
+# Corrected Polynomial Long Division (÷)
+function Base.:÷(a::FieldElement, b::FieldElement)::FieldElement # Polynomial Long Division
     if b.value == 0
         throw(ErrorException("Division by zero"))
     end
@@ -174,7 +176,7 @@ function Base.:÷(a::FieldElement, b::FieldElement)::FieldElement # http://www.e
         quotient |= UInt128(1) << shift
         numerator_degree = 127 - leading_zeros(numerator)
     end
-    return FieldElement(numerator, a.semantic, true)
+    return FieldElement(quotient, a.semantic, true)
 end
 
 
