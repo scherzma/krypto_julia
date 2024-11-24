@@ -215,6 +215,9 @@ import Base: getproperty
     if sym === :is_zero
         return () -> is_zero(gf)
     end
+    if sym === :inverse
+        return () -> inverse(gf)
+    end
     return getfield(gf, sym)
 end
 
