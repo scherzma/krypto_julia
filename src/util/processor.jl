@@ -145,8 +145,9 @@ function padding_oracle(jsonContent::Dict)
     port::Int = jsonContent["port"]
     iv::Array{UInt8} = base64decode(jsonContent["iv"])
     ciphertext::Array{UInt8} = base64decode(jsonContent["ciphertext"])
-    result = padding_attack(hostname, port, iv, ciphertext)
-    return base64encode(result)
+    #result = padding_attack(hostname, port, iv, ciphertext)
+    #return base64encode(result)
+    return "test"
 end
 
 function polynomial_add(jsonContent::Dict)
@@ -269,7 +270,7 @@ function process(jsonContent::Dict)
         try
             result = ACTIONS[action][1](arguments)
         catch e
-            println(stderr, "Error: $e")
+            #println(stderr, "Error: $e")
             continue
         end
 
