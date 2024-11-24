@@ -9,7 +9,7 @@ using .SemanticTypes: Semantic, from_string
 include("../math/galois_fast.jl")
 using .Galois_quick: FieldElement
 include("../math/polynom.jl")
-using .Polynom: Polynomial
+using .Polynom: Polynomial, gfpoly_powmod
 include("../algorithms/sea128.jl")
 include("../algorithms/xex_fde.jl")
 include("../algorithms/gcm.jl")
@@ -200,6 +200,18 @@ function polynomial_divmod(jsonContent::Dict)
     return result[1].repr(), result[2].repr()
 end
 
+function polynomial_powmod(jsonContent::Dict)
+    A::Array{String} = jsonContent["A"]
+    M::Array{String} = jsonContent["M"]
+    k::Int = jsonContent["k"]
+
+    poly_A = Polynomial(A)
+    poly_M = Polynomial(M)
+
+    return gfpoly_powmod(poly_A, poly_M, k).repr()
+end
+
+
 ACTIONS::Dict{String, Vector{Any}} = Dict(
     "add_numbers" => [add_numbers, ["sum"]],
     "subtract_numbers" => [subtract_numbers, ["difference"]],
@@ -216,6 +228,7 @@ ACTIONS::Dict{String, Vector{Any}} = Dict(
     "gfpoly_pow" => [polynomial_pow, ["Z"]],
     "gfdiv" => [gfdiv, ["q"]],
     "gfpoly_divmod" => [polynomial_divmod, ["Q", "R"]],
+    "gfpoly_powmod" => [polynomial_powmod, ["Z"]],
 )
 
 function process(jsonContent::Dict)
