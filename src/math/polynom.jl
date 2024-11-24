@@ -9,7 +9,7 @@ using Base64
 include("galois_fast.jl")
 using .Galois_quick: FieldElement
 
-import Base: +, *, ⊻, <<, >>, %, show, length, ^, ÷, /
+import Base: +, *, ⊻, <<, >>, %, show, length, ^, ÷, /, copy
 
 struct Polynomial
     coefficients::Array{FieldElement}
@@ -26,7 +26,7 @@ function Polynomial(coefficients::Array{String})::Polynomial
 end
 
 
-function reduce_polynomial(p::Polynomial)::Polynomial
+function reduce(p::Polynomial)::Polynomial
     new_power = p.power
     while new_power > 0 && p.coefficients[new_power].value == 0
         new_power -= 1
@@ -95,73 +95,47 @@ function Base.:^(a::Polynomial, b::Int)::Polynomial
     return result.reduce()
 end
 
-function inverse(a::Polynomial, p::Polynomial)::Polynomial
-    t = Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)])
-    newt = Polynomial([FieldElement(UInt128(1), from_string("gcm"), true)])
-    r = p
-    newr = a
+Base.copy(p::Polynomial) = Polynomial(copy(p.coefficients))
 
-    while !all(fe.value == 0 for fe in newr.coefficients)
-        quotient, _ = r ÷ newr
-        r, newr = newr, r - quotient * newr
-        t, newt = newt, t - quotient * newt
+function Base.:/(a::Polynomial, b::Polynomial)::Tuple{Polynomial, Polynomial}
+    # Handle division by zero
+    if b.power == 0 && b.coefficients[1].value == 0
+        throw(DivError("Polynomial division by zero"))
     end
 
-    if r.power > 0
-        error("Either p is not irreducible or a is a multiple of p")
+    # If the degree of a is less than b, the quotient is 0 and remainder is a
+    if a.power < b.power
+        quotient = Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)])
+        remainder = reduce(a)
+        return (quotient, remainder)
     end
 
-    # Multiply by multiplicative inverse of leading coefficient of r
-    inv_coeff = Polynomial([FieldElement(UInt128(1), from_string("gcm"), true) / r.coefficients[1]])
-    return inv_coeff * t
-end
+    # Initialize quotient coefficients with zeros
+    quotient_degree = a.power - b.power
+    quotient_coeffs = [FieldElement(UInt128(0), from_string("gcm")) for _ in 0:quotient_degree]
 
+    # Make a mutable copy of a for the remainder
+    remainder = copy(a).reduce()
 
-# Overload the division operator to perform polynomial division using inverse
-function Base.:/(a::Polynomial, b::Polynomial)::Polynomial
-    if b.power < 0 || all(fe.value == 0 for fe in b.coefficients)
-        error("Division by zero polynomial is not allowed.")
-    end
-    return a * inverse(b, Polynomial([FieldElement(UInt128(1), from_string("gcm"), true)]))
-end
+    while remainder.power >= b.power && remainder.power > 0
+        lead_coeff_rem = remainder.coefficients[remainder.power]
+        lead_coeff_b = b.coefficients[b.power]
+        factor = lead_coeff_rem / lead_coeff_b
+        degree_diff = remainder.power - b.power
+        quotient_coeffs[degree_diff + 1] += factor
 
-
-# Overload the division operator to perform polynomial long division
-# Returns a tuple (quotient, remainder)
-function ÷(a::Polynomial, b::Polynomial)::Tuple{Polynomial, Polynomial}
-
-    if b.power < 0 || all(fe.value == 0 for fe in b.coefficients)
-        error("Division by zero polynomial is not allowed.")
-    end
-
-    dividend = a.coefficients
-    divisor = b.coefficients
-
-    deg_dividend = a.power
-    deg_divisor = b.power
-
-    if deg_divisor > deg_dividend
-        return Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)]), a
-    end
-
-    quotient = [FieldElement(UInt128(0), from_string("gcm"), true) for _ in 1:(deg_dividend - deg_divisor + 1)]
-
-    while length(dividend) >= length(divisor)
-        leading_term = dividend[end] / divisor[end]
-        quotient[length(dividend) - length(divisor) + 1] = leading_term
-
-        # Subtract the scaled divisor from the dividend
-
-        for i in 1:length(divisor)
-            dividend[length(dividend) - length(divisor) + i] += leading_term * divisor[i]
+        for i in 1:b.power
+            j = i + degree_diff
+            remainder.coefficients[j] = remainder.coefficients[j] - (b.coefficients[i] * factor)
         end
-
-        # Remove leading zeros
-        dividend = dividend.reduce()
+        remainder = reduce(remainder)
     end
+    quotient = Polynomial(quotient_coeffs).reduce()
 
-    return Polynomial(quotient), a - Polynomial(quotient) * b
+    return (quotient, remainder)
 end
+
+
 
 
 function repr(p::Polynomial)::Array{String}
@@ -175,7 +149,7 @@ import Base: getproperty
         return () -> repr(p)
     end
     if sym === :reduce
-        return () -> reduce_polynomial(p)
+        return () -> reduce(p)
     end
     return getfield(p, sym)
 end
