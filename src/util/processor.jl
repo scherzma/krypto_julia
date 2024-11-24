@@ -6,10 +6,12 @@ using Base64
 
 include("../util/semantic_types.jl")
 using .SemanticTypes: Semantic, from_string
-include("../math/galois_fast.jl")
-using .Galois_quick: FieldElement
 include("../math/polynom.jl")
 using .Polynom: Polynomial, gfpoly_powmod
+include("../math/galois_fast.jl")
+using .Galois_quick: FieldElement
+
+include("../algorithms/poly_diff.jl")
 include("../algorithms/sea128.jl")
 include("../algorithms/xex_fde.jl")
 include("../algorithms/gcm.jl")
@@ -20,6 +22,7 @@ using .Polynom: Polynomial
 using .Sea128: encrypt_sea, decrypt_sea
 using .FDE: encrypt_fde, decrypt_fde
 using .GCM: encrypt_gcm, decrypt_gcm
+using .Poly_diff: gfpoly_diff
 using Base.Threads
 
 
@@ -227,6 +230,11 @@ function polynomial_sqrt(jsonContent::Dict)
     return (√poly_Q).repr()
 end
 
+function polynomial_diff(jsonContent::Dict)
+    F::Array{String} = jsonContent["F"]
+    return gfpoly_diff(F).repr()
+end
+
 ACTIONS::Dict{String, Vector{Any}} = Dict(
     "add_numbers" => [add_numbers, ["sum"]],
     "subtract_numbers" => [subtract_numbers, ["difference"]],
@@ -247,6 +255,7 @@ ACTIONS::Dict{String, Vector{Any}} = Dict(
     "gfpoly_sort" => [polynomial_sort, ["sorted_polys"]],
     "gfpoly_make_monic" => [polynomial_make_monic, ["A*"]],
     "gfpoly_sqrt" => [polynomial_sqrt, ["S"]],
+    "gfpoly_diff" => [polynomial_diff, ["F'"]],
 )
 
 function process(jsonContent::Dict)
