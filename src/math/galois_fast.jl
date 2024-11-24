@@ -3,8 +3,7 @@ module Galois_quick
 
 using ..SemanticTypes: Semantic, GCM, XEX
 using Base64
-
-import Base: +, *, ⊻, <<, >>, %, show, length, /
+import Base: +, *, ⊻, <<, >>, %, show, length, /, -, ÷
 
 struct FieldElement
     value::UInt128
@@ -114,9 +113,45 @@ function Base.:*(a::FieldElement, b::FieldElement)::FieldElement
     return FieldElement(aggregate, a.semantic, true)
 end
 
+function Base.:-(a::FieldElement, b::FieldElement)::FieldElement
+    return a + b
+end
 
 
-function Base.:/(a::FieldElement, b::FieldElement)::FieldElement # http://www.ee.unb.ca/cgi-bin/tervo/calc.pl?num=100100101010101011011111000111&den=1111001110010101&f=d&e=1&p=1&m=1
+function power(a::FieldElement, exponent::UInt128)::FieldElement
+    result = FieldElement(UInt128(1), a.semantic, true)  # Initialize to 1
+    base = a
+
+    @inbounds for i in 0:127
+        if (exponent >> i) & 1 == 1
+            result = result * base
+        end
+        base = base * base
+    end
+
+    return result
+end
+
+function inverse(a::FieldElement)::FieldElement
+    if is_zero(a)
+        throw(ArgumentError("Cannot invert the zero element"))
+    end
+    exponent = UInt128(~UInt128(0)) - UInt128(1)  # 2^128 - 2
+    return power(a, exponent)
+end
+
+
+# Corrected Division Function Using the Correct Inverse
+function Base.:/(a::FieldElement, b::FieldElement)::FieldElement
+    if b.value == 0
+        throw(ErrorException("Division by zero"))
+    end
+    return a * inverse(b)
+end
+
+
+# Corrected Polynomial Long Division (÷)
+function Base.:÷(a::FieldElement, b::FieldElement)::FieldElement # Polynomial Long Division
     if b.value == 0
         throw(ErrorException("Division by zero"))
     end

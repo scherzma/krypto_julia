@@ -53,8 +53,9 @@ function crypt_gcm(key::Array{UInt8}, text::Array{UInt8}, nonce::Array{UInt8}, a
         temp_nonce = [nonce; reverse!(reinterpret(UInt8, [UInt32(counter)]))]
         enc_i = enc_func("AES128", key, temp_nonce)
         end_idx = min(i+15, length(text))
+        block = text[i:end_idx]
         enc_block = enc_i[1:length(block)]
-        append!(result_text, text[i:end_idx] .⊻ enc_block)
+        append!(result_text, block .⊻ enc_block)
         counter += 1
     end
 
