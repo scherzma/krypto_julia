@@ -9,7 +9,7 @@ using Base64
 include("galois_fast.jl")
 using .Galois_quick: FieldElement
 
-import Base: +, *, ⊻, <<, >>, %, show, length, ^, ÷, /, copy
+import Base: +, *, ⊻, <<, >>, %, show, length, ^, ÷, /, copy, <, >, ==, isless
 
 struct Polynomial
     coefficients::Array{FieldElement}
@@ -43,6 +43,23 @@ function reduce_pol(p::Polynomial)::Polynomial
     return Polynomial(p.coefficients[1:new_power])
 end
 
+function Base.isless(a::Polynomial, b::Polynomial)::Bool
+    if a.power < b.power
+        return true
+    elseif a.power > b.power
+        return false
+    else
+        # Degrees are equal, compare coefficients from highest to lowest
+        for i in a.power:-1:1
+            if isless(a.coefficients[i], b.coefficients[i])
+                return true
+            elseif isless(b.coefficients[i], a.coefficients[i])
+                return false
+            end
+        end
+        return false  # Polynomials are equal
+    end
+end
 
 function Base.:+(a::Polynomial, b::Polynomial)::Polynomial
 
@@ -98,33 +115,24 @@ end
 Base.copy(p::Polynomial) = Polynomial(copy(p.coefficients))
 
 function Base.:/(a::Polynomial, b::Polynomial)::Tuple{Polynomial, Polynomial}
-    # Handle division by zero
     if b.power == 0 && b.coefficients[1].value == 0
         throw(DivError("Polynomial division by zero"))
     end
 
-    # If the degree of a is less than b, quotient is 0 and remainder is a
     if a.power < b.power
         quotient = Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)])
         remainder = reduce_pol(a)
         return (quotient, remainder)
     end
 
-    # Initialize quotient coefficients with zeros
     quotient_degree = a.power - b.power
-    # Preallocate with FieldElement zeros
     zero_fe = FieldElement(UInt128(0), from_string("gcm"))
     quotient_coeffs = fill(zero_fe, quotient_degree + 1)
-
-    # Make a mutable copy of a for the remainder
     remainder_coeffs = copy(a.coefficients)
     remainder_degree = a.power
-
-    # Cache divisor's leading coefficient and store its inverse
     b_lead_coeff = b.coefficients[b.power]
     b_inv_lead = b_lead_coeff.inverse()  # Assuming an inverse method exists
 
-    # Cache divisor coefficients for faster access
     b_coeffs = b.coefficients
     b_power = b.power
 
@@ -175,7 +183,6 @@ function gfpoly_powmod(A::Polynomial, M::Polynomial, k::Integer)::Polynomial
 
     return result
 end
-
 
 
 function repr(p::Polynomial)::Array{String}
