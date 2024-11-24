@@ -177,7 +177,7 @@ function polynomial_pow(jsonContent::Dict)
     return (poly_A ^ B).repr()
 end
 
-function polynomial_div(jsonContent::Dict)
+function gfdiv(jsonContent::Dict)
     A::String = jsonContent["a"]
     B::String = jsonContent["b"]
 
@@ -194,7 +194,7 @@ function polynomial_divmod(jsonContent::Dict)
     poly_A = Polynomial(A)
     poly_B = Polynomial(B)
 
-    #result = poly_A / poly_B
+    #result = poly_A ÷ poly_B
     #return result[1].repr(), result[2].repr()
     return "result", "result"
 end
@@ -213,7 +213,7 @@ ACTIONS::Dict{String, Vector{Any}} = Dict(
     "gfpoly_add" => [polynomial_add, ["S"]],
     "gfpoly_mul" => [polynomial_mul, ["P"]],
     "gfpoly_pow" => [polynomial_pow, ["Z"]],
-    "gfdiv" => [polynomial_div, ["q"]],
+    "gfdiv" => [gfdiv, ["q"]],
     "gfpoly_divmod" => [polynomial_divmod, ["Q", "R"]],
 )
 
@@ -233,7 +233,6 @@ function process(jsonContent::Dict)
 
         output_key = ACTIONS[action][2]
         result = nothing
-        #print("Processing $action... >>> ")
         try
             result = ACTIONS[action][1](arguments)
         catch e
