@@ -218,6 +218,12 @@ function polynomial_sort(jsonContent::Dict)
     return [poly.repr() for poly in sorted_polys]
 end
 
+function polynomial_make_monic(jsonContent::Dict)
+    A::Array{String} = jsonContent["A"]
+    poly_A = Polynomial(A)
+    return poly_A.monic().repr()
+end
+
 ACTIONS::Dict{String, Vector{Any}} = Dict(
     "add_numbers" => [add_numbers, ["sum"]],
     "subtract_numbers" => [subtract_numbers, ["difference"]],
@@ -236,6 +242,7 @@ ACTIONS::Dict{String, Vector{Any}} = Dict(
     "gfpoly_divmod" => [polynomial_divmod, ["Q", "R"]],
     "gfpoly_powmod" => [polynomial_powmod, ["Z"]],
     "gfpoly_sort" => [polynomial_sort, ["sorted_polys"]],
+    "gfpoly_make_monic" => [polynomial_make_monic, ["A*"]],
 )
 
 function process(jsonContent::Dict)
