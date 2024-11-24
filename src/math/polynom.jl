@@ -9,7 +9,7 @@ using Base64
 include("galois_fast.jl")
 using .Galois_quick: FieldElement
 
-import Base: +, *, ⊻, <<, >>, %, show, length, ^, ÷, /, copy
+import Base: +, *, ⊻, <<, >>, %, show, length, ^, ÷, /, copy, <, >, ==, isless
 
 struct Polynomial
     coefficients::Array{FieldElement}
@@ -26,7 +26,7 @@ function Polynomial(coefficients::Array{String})::Polynomial
 end
 
 
-function reduce(p::Polynomial)::Polynomial
+function reduce_pol(p::Polynomial)::Polynomial
     new_power = p.power
     while new_power > 0 && p.coefficients[new_power].value == 0
         new_power -= 1
@@ -43,6 +43,23 @@ function reduce(p::Polynomial)::Polynomial
     return Polynomial(p.coefficients[1:new_power])
 end
 
+function Base.isless(a::Polynomial, b::Polynomial)::Bool
+    if a.power < b.power
+        return true
+    elseif a.power > b.power
+        return false
+    else
+        # Degrees are equal, compare coefficients from highest to lowest
+        for i in a.power:-1:1
+            if isless(a.coefficients[i], b.coefficients[i])
+                return true
+            elseif isless(b.coefficients[i], a.coefficients[i])
+                return false
+            end
+        end
+        return false  # Polynomials are equal
+    end
+end
 
 function Base.:+(a::Polynomial, b::Polynomial)::Polynomial
 
@@ -58,7 +75,7 @@ function Base.:+(a::Polynomial, b::Polynomial)::Polynomial
         end
     end
 
-    return Polynomial(result_coefficients).reduce()
+    return Polynomial(result_coefficients).reduce_pol()
 end
 
 function Base.:*(a::Polynomial, b::Polynomial)::Polynomial
@@ -72,7 +89,7 @@ function Base.:*(a::Polynomial, b::Polynomial)::Polynomial
             result_coefficients[i+j - 1] += a.coefficients[i] * b.coefficients[j]
         end
     end
-    return Polynomial(result_coefficients).reduce()
+    return Polynomial(result_coefficients).reduce_pol()
 end
 
 function Base.:^(a::Polynomial, b::Int)::Polynomial
@@ -92,39 +109,30 @@ function Base.:^(a::Polynomial, b::Int)::Polynomial
         exponent >>= 1
     end
 
-    return result.reduce()
+    return result.reduce_pol()
 end
 
 Base.copy(p::Polynomial) = Polynomial(copy(p.coefficients))
 
 function Base.:/(a::Polynomial, b::Polynomial)::Tuple{Polynomial, Polynomial}
-    # Handle division by zero
     if b.power == 0 && b.coefficients[1].value == 0
         throw(DivError("Polynomial division by zero"))
     end
 
-    # If the degree of a is less than b, quotient is 0 and remainder is a
     if a.power < b.power
         quotient = Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)])
-        remainder = reduce(a)
+        remainder = reduce_pol(a)
         return (quotient, remainder)
     end
 
-    # Initialize quotient coefficients with zeros
     quotient_degree = a.power - b.power
-    # Preallocate with FieldElement zeros
     zero_fe = FieldElement(UInt128(0), from_string("gcm"))
     quotient_coeffs = fill(zero_fe, quotient_degree + 1)
-
-    # Make a mutable copy of a for the remainder
     remainder_coeffs = copy(a.coefficients)
     remainder_degree = a.power
-
-    # Cache divisor's leading coefficient and store its inverse
     b_lead_coeff = b.coefficients[b.power]
     b_inv_lead = b_lead_coeff.inverse()  # Assuming an inverse method exists
 
-    # Cache divisor coefficients for faster access
     b_coeffs = b.coefficients
     b_power = b.power
 
@@ -143,12 +151,12 @@ function Base.:/(a::Polynomial, b::Polynomial)::Tuple{Polynomial, Polynomial}
         end
     end
 
-    quotient = Polynomial(quotient_coeffs).reduce()
+    quotient = Polynomial(quotient_coeffs).reduce_pol()
 
     if remainder_degree == 0 && remainder_coeffs[1].value == 0
         remainder = Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)])
     else
-        remainder = Polynomial(remainder_coeffs[1:remainder_degree]).reduce()
+        remainder = Polynomial(remainder_coeffs[1:remainder_degree]).reduce_pol()
     end
 
     return (quotient, remainder)
@@ -177,7 +185,6 @@ function gfpoly_powmod(A::Polynomial, M::Polynomial, k::Integer)::Polynomial
 end
 
 
-
 function repr(p::Polynomial)::Array{String}
     return [gfe.to_block() for gfe in p.coefficients]
 end
@@ -188,8 +195,8 @@ import Base: getproperty
     if sym === :repr
         return () -> repr(p)
     end
-    if sym === :reduce
-        return () -> reduce(p)
+    if sym === :reduce_pol
+        return () -> reduce_pol(p)
     end
     return getfield(p, sym)
 end
