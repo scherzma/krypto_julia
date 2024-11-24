@@ -193,10 +193,11 @@ function polynomial_divmod(jsonContent::Dict)
 
     poly_A = Polynomial(A)
     poly_B = Polynomial(B)
+    #println(poly_A)
+    #println(poly_B)
 
-    #result = poly_A ÷ poly_B
-    #return result[1].repr(), result[2].repr()
-    return "result", "result"
+    result = poly_A / poly_B
+    return result[1].repr(), result[2].repr()
 end
 
 ACTIONS::Dict{String, Vector{Any}} = Dict(

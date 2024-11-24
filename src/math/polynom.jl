@@ -9,7 +9,7 @@ using Base64
 include("galois_fast.jl")
 using .Galois_quick: FieldElement
 
-import Base: +, *, ⊻, <<, >>, %, show, length, ^, ÷, /
+import Base: +, *, ⊻, <<, >>, %, show, length, ^, ÷, /, copy
 
 struct Polynomial
     coefficients::Array{FieldElement}
@@ -26,7 +26,7 @@ function Polynomial(coefficients::Array{String})::Polynomial
 end
 
 
-function reduce_polynomial(p::Polynomial)::Polynomial
+function reduce(p::Polynomial)::Polynomial
     new_power = p.power
     while new_power > 0 && p.coefficients[new_power].value == 0
         new_power -= 1
@@ -95,6 +95,48 @@ function Base.:^(a::Polynomial, b::Int)::Polynomial
     return result.reduce()
 end
 
+Base.copy(p::Polynomial) = Polynomial(copy(p.coefficients))
+
+function Base.:/(a::Polynomial, b::Polynomial)::Tuple{Polynomial, Polynomial}
+    # Handle division by zero
+    if b.power == 0 && b.coefficients[1].value == 0
+        throw(DivError("Polynomial division by zero"))
+    end
+
+    # If the degree of a is less than b, the quotient is 0 and remainder is a
+    if a.power < b.power
+        quotient = Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)])
+        remainder = reduce(a)
+        return (quotient, remainder)
+    end
+
+    # Initialize quotient coefficients with zeros
+    quotient_degree = a.power - b.power
+    quotient_coeffs = [FieldElement(UInt128(0), from_string("gcm")) for _ in 0:quotient_degree]
+
+    # Make a mutable copy of a for the remainder
+    remainder = copy(a).reduce()
+
+    while remainder.power >= b.power && remainder.power > 0
+        lead_coeff_rem = remainder.coefficients[remainder.power]
+        lead_coeff_b = b.coefficients[b.power]
+        factor = lead_coeff_rem / lead_coeff_b
+        degree_diff = remainder.power - b.power
+        quotient_coeffs[degree_diff + 1] += factor
+
+        for i in 1:b.power
+            j = i + degree_diff
+            remainder.coefficients[j] = remainder.coefficients[j] - (b.coefficients[i] * factor)
+        end
+        remainder = reduce(remainder)
+    end
+    quotient = Polynomial(quotient_coeffs).reduce()
+
+    return (quotient, remainder)
+end
+
+
+
 
 function repr(p::Polynomial)::Array{String}
     return [gfe.to_block() for gfe in p.coefficients]
@@ -107,7 +149,7 @@ import Base: getproperty
         return () -> repr(p)
     end
     if sym === :reduce
-        return () -> reduce_polynomial(p)
+        return () -> reduce(p)
     end
     return getfield(p, sym)
 end
