@@ -211,6 +211,12 @@ function polynomial_powmod(jsonContent::Dict)
     return gfpoly_powmod(poly_A, poly_M, k).repr()
 end
 
+function polynomial_sort(jsonContent::Dict)
+    polys_str::Array{Array{String}} = jsonContent["polys"]
+    polys = [Polynomial(poly) for poly in polys_str]
+    sorted_polys = sort(polys)
+    return [poly.repr() for poly in sorted_polys]
+end
 
 ACTIONS::Dict{String, Vector{Any}} = Dict(
     "add_numbers" => [add_numbers, ["sum"]],
@@ -229,6 +235,7 @@ ACTIONS::Dict{String, Vector{Any}} = Dict(
     "gfdiv" => [gfdiv, ["q"]],
     "gfpoly_divmod" => [polynomial_divmod, ["Q", "R"]],
     "gfpoly_powmod" => [polynomial_powmod, ["Z"]],
+    "gfpoly_sort" => [polynomial_sort, ["sorted_polys"]],
 )
 
 function process(jsonContent::Dict)
@@ -247,10 +254,11 @@ function process(jsonContent::Dict)
 
         output_key = ACTIONS[action][2]
         result = nothing
+        #println("Processing $action >>> ")
         try
             result = ACTIONS[action][1](arguments)
         catch e
-            #println(stderr, "Error: $e")
+            println(stderr, "Error: $e")
             continue
         end
 

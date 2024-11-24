@@ -3,7 +3,7 @@ module Galois_quick
 
 using ..SemanticTypes: Semantic, GCM, XEX
 using Base64
-import Base: +, *, ⊻, <<, >>, %, show, length, /, -, ÷
+import Base: +, *, ⊻, <<, >>, %, show, length, /, -, ÷, <, >, ==, isless
 
 struct FieldElement
     value::UInt128
@@ -30,7 +30,11 @@ const BIT_REVERSE_TABLE = UInt8[0, 128, 64, 192, 32, 160, 96, 224, 16, 144, 80, 
 @inline to_polynomial(a::FieldElement)::Array{UInt8} = [x for x in 0:127 if (a.value >> x) % 2 == 1]
 @inline get_bytes(a::FieldElement)::Vector{UInt8} = base64decode(a.to_block())
 @inline Base.:+(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value ⊻ b.value, a.semantic, true)
-
+@inline Base.:-(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value ⊻ b.value, a.semantic, true)
+@inline Base.:<(a::FieldElement, b::FieldElement)::Bool = a.value < b.value
+@inline Base.:>(a::FieldElement, b::FieldElement)::Bool = a.value > b.value
+@inline Base.:(==)(a::FieldElement, b::FieldElement)::Bool = a.value == b.value
+@inline Base.isless(a::FieldElement, b::FieldElement)::Bool = a.value < b.value
 
 
 @inline function int_to_semantic(x::UInt128, semantic::Semantic)::UInt128
@@ -52,8 +56,6 @@ end
     end
     return result
 end
-
-
 
 function FieldElement(x::UInt128, semantic::Semantic)::FieldElement
     FieldElement(int_to_semantic(x, semantic), semantic, true)
