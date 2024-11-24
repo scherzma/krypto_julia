@@ -3,7 +3,7 @@ module Galois_quick
 
 using ..SemanticTypes: Semantic, GCM, XEX
 using Base64
-import Base: +, *, ⊻, <<, >>, %, show, length, /, -, ÷, <, >, ==, isless
+import Base: +, *, ⊻, <<, >>, %, show, length, /, -, ÷, <, >, ==, isless, √
 
 struct FieldElement
     value::UInt128
@@ -35,6 +35,17 @@ const BIT_REVERSE_TABLE = UInt8[0, 128, 64, 192, 32, 160, 96, 224, 16, 144, 80, 
 @inline Base.:>(a::FieldElement, b::FieldElement)::Bool = a.value > b.value
 @inline Base.:(==)(a::FieldElement, b::FieldElement)::Bool = a.value == b.value
 @inline Base.isless(a::FieldElement, b::FieldElement)::Bool = a.value < b.value
+
+function Base.:√(a::FieldElement)::FieldElement
+    if is_zero(a)
+        return a
+    end
+    result = a
+    for _ in 1:127
+        result = result * result
+    end
+    return result
+end
 
 
 @inline function int_to_semantic(x::UInt128, semantic::Semantic)::UInt128
