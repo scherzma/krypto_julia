@@ -1,77 +1,33 @@
-#!/bin/bash
+#!/usr/local/bin/julia
 
-# File: kauma
-# Description: Sends a command-line argument to the last Julia server and prints the response.
+using JSON
+#using PackageCompiler
 
-PORTS_FILE="/tmp/julia_ports.tmp"
-BUILD_SCRIPT="./build"  # Adjust the path if 'build' is located elsewhere
 
-# Function to start the Julia server using the build script
-start_julia_server() {
-    #echo "No Julia servers are running. Starting one using the 'build' script."
+include("src/util/processor.jl")
+using .Processing: process
+
+function main()
+    file::String = "./sample.json"
+
+    if length(ARGS) == 1
+        file = ARGS[1]
+    end
     
-    # Determine the directory of the current script
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    
-    # Execute the build script
-    "$SCRIPT_DIR/build"
-    
-    # Check if the build script succeeded
-    if [ $? -ne 0 ]; then
-        echo "Failed to start Julia server using the 'build' script."
-        exit 1
-    fi
-    
-    # Optional: Wait for a short period to ensure the server is up
-    sleep 1
-}
+    jsonContent = JSON.parsefile(file)
+    process(jsonContent)
+end
 
-# Check if exactly one argument is provided
-if [ $# -ne 1 ]; then
-    echo "Usage: kauma <argument>"
-    exit 1
-fi
 
-arg="$1"  # Capture the command-line argument
 
-# Check if the ports file exists and is not empty
-if [ ! -s "$PORTS_FILE" ]; then
-    start_julia_server
-fi
+main()
 
-# Verify again in case the build script failed silently
-if [ ! -s "$PORTS_FILE" ]; then
-    echo "No Julia servers are running after attempting to start one."
-    exit 1
-fi
 
-# Get the last port from the ports file
-PORT=$(tail -n 1 "$PORTS_FILE")
+#create_app(".", "Krypto",
+#    precompile_execution_file="./kauma",
+#    force=true,
+#    filter_stdlibs=true,
+#    cpu_target="native",
+#)
 
-# Send the argument to the Julia server and capture the response
-response=$(echo "$arg" | nc localhost "$PORT")
-
-# Check if the response is empty (e.g., server not running)
-if [ -z "$response" ]; then
-    echo "No response from Julia server on port $PORT. Attempting to restart the server."
-    
-    # Remove the faulty port from the ports file
-    sed -i '$d' "$PORTS_FILE"
-    
-    # Attempt to start a new server
-    start_julia_server
-    
-    # Get the new port
-    PORT=$(tail -n 1 "$PORTS_FILE")
-    
-    # Retry sending the argument
-    response=$(echo "$arg" | nc localhost "$PORT")
-    
-    if [ -z "$response" ]; then
-        echo "Still no response from Julia server on port $PORT. Exiting."
-        exit 1
-    fi
-fi
-
-# Print the response
-echo "$response"
+# julia --threads=auto --project=. kauma
