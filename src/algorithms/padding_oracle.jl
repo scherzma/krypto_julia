@@ -93,8 +93,6 @@ function padding_attack(hostname::String, port::Int, iv::Array{UInt8}, ciphertex
     return de_pad(plaintext)
 end
 
-
-
 end
 
 

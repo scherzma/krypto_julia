@@ -1,8 +1,5 @@
 module Krypto
 
 using JSON
-include("util/processor.jl")
-
-export process
-
+include("../kauma")
 end
