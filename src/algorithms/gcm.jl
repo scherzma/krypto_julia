@@ -2,15 +2,11 @@
 module GCM
 
 
-include("../util/semantic_types.jl")
-using .SemanticTypes
-
-include("sea128.jl")
-include("../math/galois_fast.jl")
 using Nettle
 using Base64
-using .Sea128: encrypt_sea, decrypt_sea
-using .Galois_quick: FieldElement
+using ..SemanticTypes
+using ..Sea128: encrypt_sea, decrypt_sea
+using ..Galois_quick: FieldElement
 
 
 arr_to_int(arr::Array{UInt8}) = reinterpret(UInt128, reverse(arr))[1]
