@@ -5,17 +5,19 @@ using JSON
 using Base64
 
 include("../util/semantic_types.jl")
+using .SemanticTypes: Semantic, from_string
 include("../math/polynom.jl")
+using .Polynom: Polynomial, gfpoly_powmod
 include("../math/galois_fast.jl")
+using .Galois_quick: FieldElement
+
 include("../algorithms/sea128.jl")
 include("../algorithms/xex_fde.jl")
 include("../algorithms/gcm.jl")
 include("../algorithms/padding_oracle.jl")
-
-using .SemanticTypes: Semantic, from_string
-using .Galois_quick: FieldElement
-using .Polynom: Polynomial, gfpoly_powmod
 using .PaddingOracle: PaddingClient, padding_attack
+using .Galois_quick: FieldElement
+using .Polynom: Polynomial
 using .Sea128: encrypt_sea, decrypt_sea
 using .FDE: encrypt_fde, decrypt_fde
 using .GCM: encrypt_gcm, decrypt_gcm
@@ -303,7 +305,7 @@ function process(jsonContent::Dict)
         result_testcases[key] = json_result
     end
 
-    return JSON.json(Dict("responses" => result_testcases))
+    println(JSON.json(Dict("responses" => result_testcases)))
 
 end
 

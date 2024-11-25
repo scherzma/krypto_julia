@@ -1,7 +1,7 @@
 module FDE
 
-# include("sea128.jl")
-using ..Sea128: encrypt_sea, decrypt_sea
+include("sea128.jl")
+using .Sea128: encrypt_sea, decrypt_sea
 using Base64
 
 
