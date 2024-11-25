@@ -11,7 +11,6 @@ using .Polynom: Polynomial, gfpoly_powmod
 include("../math/galois_fast.jl")
 using .Galois_quick: FieldElement
 
-include("../algorithms/poly_diff.jl")
 include("../algorithms/sea128.jl")
 include("../algorithms/xex_fde.jl")
 include("../algorithms/gcm.jl")
@@ -22,7 +21,6 @@ using .Polynom: Polynomial
 using .Sea128: encrypt_sea, decrypt_sea
 using .FDE: encrypt_fde, decrypt_fde
 using .GCM: encrypt_gcm, decrypt_gcm
-using .Poly_diff: gfpoly_diff
 using Base.Threads
 
 
@@ -147,9 +145,10 @@ function padding_oracle(jsonContent::Dict)
     end
     port::Int = jsonContent["port"]
     iv::Array{UInt8} = base64decode(jsonContent["iv"])
-    ciphertext::Array{UInt8} = base64decode(jsonContent["ciphertext"])
-    result = padding_attack(hostname, port, iv, ciphertext)
-    return base64encode(result)
+    #ciphertext::Array{UInt8} = base64decode(jsonContent["ciphertext"])
+    #result = padding_attack(hostname, port, iv, ciphertext)
+    #return base64encode(result)
+    return "result"
 end
 
 function polynomial_add(jsonContent::Dict)
@@ -232,7 +231,17 @@ end
 
 function polynomial_diff(jsonContent::Dict)
     F::Array{String} = jsonContent["F"]
-    return gfpoly_diff(F).repr()
+    poly_F = Polynomial(F)
+    return poly_F.diff().repr()
+end
+
+function polynomial_gcd(jsonContent::Dict)
+    A::Array{String} = jsonContent["A"]
+    B::Array{String} = jsonContent["B"]
+    poly_A = Polynomial(A)
+    poly_B = Polynomial(B)
+    ans = poly_A.gcd(poly_B)
+    return ans.repr()
 end
 
 ACTIONS::Dict{String, Vector{Any}} = Dict(
@@ -256,6 +265,7 @@ ACTIONS::Dict{String, Vector{Any}} = Dict(
     "gfpoly_make_monic" => [polynomial_make_monic, ["A*"]],
     "gfpoly_sqrt" => [polynomial_sqrt, ["S"]],
     "gfpoly_diff" => [polynomial_diff, ["F'"]],
+    "gfpoly_gcd" => [polynomial_gcd, ["G"]],
 )
 
 function process(jsonContent::Dict)
@@ -278,7 +288,7 @@ function process(jsonContent::Dict)
         try
             result = ACTIONS[action][1](arguments)
         catch e
-            println(stderr, "Error: $e")
+            #println(stderr, "Error: $e")
             continue
         end
 
