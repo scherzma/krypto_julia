@@ -1,33 +1,35 @@
-#!/usr/local/bin/julia
+#!/bin/bash
 
-using JSON
-#using PackageCompiler
+# File: kauma
+# Description: Sends a command-line argument to the last Julia server and prints the response.
 
+PORTS_FILE="/tmp/julia_ports.tmp"
 
-include("src/util/processor.jl")
-using .Processing: process
+# Check if exactly one argument is provided
+if [ $# -ne 1 ]; then
+    echo "Usage: kauma <argument>"
+    exit 1
+fi
 
-function main()
-    file::String = "./sample.json"
+arg="$1"  # Capture the command-line argument
 
-    if length(ARGS) == 1
-        file = ARGS[1]
-    end
-    
-    jsonContent = JSON.parsefile(file)
-    process(jsonContent)
-end
+# Check if the ports file exists and is not empty
+if [ ! -s "$PORTS_FILE" ]; then
+    echo "No Julia servers are running. Please start a server using the 'build' script."
+    exit 1
+fi
 
+# Get the last port from the ports file
+PORT=$(tail -n 1 "$PORTS_FILE")
 
+# Send the argument to the Julia server and capture the response
+response=$(echo "$arg" | nc localhost $PORT)
 
-main()
+# Check if the response is empty (e.g., server not running)
+if [ -z "$response" ]; then
+    echo "No response from Julia server on port $PORT. Ensure the server is running."
+    exit 1
+fi
 
-
-#create_app(".", "Krypto",
-#    precompile_execution_file="./kauma",
-#    force=true,
-#    filter_stdlibs=true,
-#    cpu_target="native",
-#)
-
-# julia --threads=auto --project=. kauma
+# Print the response
+echo "$response"

@@ -1,0 +1,40 @@
+#!/bin/bash
+
+# File: kill_servers
+# Description: Terminates all Julia server instances based on /tmp/julia_ports.tmp.
+
+PORTS_FILE="/tmp/julia_ports.tmp"
+
+# Check if the ports file exists and is not empty
+if [ ! -s "$PORTS_FILE" ]; then
+    echo "No Julia servers are running or /tmp/julia_ports.tmp does not exist."
+    exit 0
+fi
+
+# Read all ports from the ports file
+ports=($(cat "$PORTS_FILE"))
+
+# Iterate over each port and attempt to kill the server
+for PORT in "${ports[@]}"; do
+    echo "Attempting to kill Julia server on port $PORT..."
+
+    # Find the process ID using the port
+    PID=$(lsof -ti TCP:$PORT)
+
+    if [ -n "$PID" ]; then
+        kill "$PID" 2>/dev/null
+
+        if [ $? -eq 0 ]; then
+            echo "Successfully terminated Julia server on port $PORT (PID: $PID)."
+        else
+            echo "Failed to terminate Julia server on port $PORT (PID: $PID)."
+        fi
+    else
+        echo "No process found on port $PORT."
+    fi
+done
+
+# Remove the ports file
+rm "$PORTS_FILE"
+
+echo "All Julia servers have been terminated."
