@@ -26,6 +26,11 @@ function Polynomial(coefficients::Array{String})::Polynomial
 end
 
 
+function is_zero(p::Polynomial)::Bool
+    return p.power == 0 || (p.power == 1 && p.coefficients[1].is_zero())
+end
+
+
 function reduce_pol(p::Polynomial)::Polynomial
     new_power = p.power
     while new_power > 0 && p.coefficients[new_power].value == 0
@@ -76,6 +81,10 @@ function Base.:+(a::Polynomial, b::Polynomial)::Polynomial
     end
 
     return Polynomial(result_coefficients).reduce_pol()
+end
+
+function Base.:-(a::Polynomial, b::Polynomial)::Polynomial
+    return a + b
 end
 
 function Base.:*(a::Polynomial, b::Polynomial)::Polynomial
@@ -218,6 +227,39 @@ function monic(A::Polynomial)::Polynomial
 end
 
 
+function diff(poly::Polynomial)::Polynomial
+    derivative_coeffs::Array{FieldElement} = []
+    coeff::FieldElement = FieldElement(UInt128(0), from_string("gcm"))
+
+    for i in 1:poly.power
+        if isodd(i)
+            coeff = poly.coefficients[i + 1]
+            push!(derivative_coeffs, coeff)
+        else
+            push!(derivative_coeffs, FieldElement(UInt128(0), from_string("gcm")))
+        end
+    end
+
+    derivative_poly = Polynomial(derivative_coeffs).reduce_pol()
+
+    return derivative_poly
+end
+
+
+
+function gcd(A::Polynomial, B::Polynomial)::Polynomial
+    a = reduce_pol(A)
+    b = reduce_pol(B)
+
+    while !is_zero(b)
+        _, r = a / b
+        a, b = b, r
+    end
+
+    return monic(a)
+end
+
+
 
 function repr(p::Polynomial)::Array{String}
     return [gfe.to_block() for gfe in p.coefficients]
@@ -234,6 +276,12 @@ import Base: getproperty
     end
     if sym === :monic
         return () -> monic(p)
+    end
+    if sym === :diff
+        return () -> diff(p)
+    end
+    if sym === :gcd
+        return (b::Polynomial) -> gcd(p, b)
     end
     return getfield(p, sym)
 end
