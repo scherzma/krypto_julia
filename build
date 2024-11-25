@@ -24,7 +24,7 @@ find_available_port() {
         fi
         port=$((port + 1))
     done
-    echo "No available ports found between $START_PORT and $MAX_PORT." >&2
+    # echo "No available ports found between $START_PORT and $MAX_PORT." >&2
     exit 1
 }
 
@@ -35,7 +35,7 @@ LOGFILE="$LOG_DIR/julia_server_$PORT.log"
 
 # Remove any existing lockfile for this port
 if [ -e "$LOCKFILE" ]; then
-    echo "Removing existing lockfile $LOCKFILE."
+    # echo "Removing existing lockfile $LOCKFILE."
     rm "$LOCKFILE"
 fi
 
@@ -113,11 +113,11 @@ JULIA_PID=$!
 # Function to clean up the lockfile and kill the Julia server if build exits unexpectedly
 cleanup() {
     if [ -e "$LOCKFILE" ]; then
-        echo "Removing lockfile $LOCKFILE."
+        # echo "Removing lockfile $LOCKFILE."
         rm "$LOCKFILE"
     fi
     if ps -p "$JULIA_PID" > /dev/null 2>&1; then
-        echo "Terminating Julia server (PID: $JULIA_PID)."
+        # echo "Terminating Julia server (PID: $JULIA_PID)."
         kill "$JULIA_PID" 2>/dev/null
     fi
 }
@@ -135,12 +135,12 @@ while [ ! -e "$LOCKFILE" ] && [ $elapsed -lt $TIMEOUT ]; do
 done
 
 if [ -e "$LOCKFILE" ]; then
-    echo "Julia server has been successfully started on port $PORT."
+    # echo "Julia server has been successfully started on port $PORT."
     # Remove the trap to prevent cleanup on normal exit
     trap - EXIT
     exit 0
 else
-    echo "Failed to start Julia server on port $PORT within the expected time." >&2
+    # echo "Failed to start Julia server on port $PORT within the expected time." >&2
     # Optionally, kill the Julia process if it's still running
     kill "$JULIA_PID" 2>/dev/null
     # Remove the port from the ports file
