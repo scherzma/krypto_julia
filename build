@@ -13,20 +13,24 @@ LOG_DIR="/tmp/julia_logs"
 # Create log directory if it doesn't exist
 mkdir -p "$LOG_DIR"
 
-# Function to find an available port
+# Function to find an available port using Python instead of nc
 find_available_port() {
     local port=$START_PORT
     while [ $port -le $MAX_PORT ]; do
-        # Check if the port is in use
-        if ! nc -z localhost $port; then
-            echo $port
+        # Check if the port is in use using Python
+        python3 -c "import socket; s = socket.socket(socket.AF_INET, socket.SOCK_STREAM); \
+s.settimeout(1); result = s.connect_ex(('localhost', $port)); s.close(); exit(0) if result != 0 else exit(1)"
+        
+        if [ $? -eq 0 ]; then
+            echo "$port"
             return
         fi
         port=$((port + 1))
     done
-    # echo "No available ports found between $START_PORT and $MAX_PORT." >&2
+    echo "No available ports found between $START_PORT and $MAX_PORT." >&2
     exit 1
 }
+
 
 # Find an available port
 PORT=$(find_available_port)
