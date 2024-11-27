@@ -115,11 +115,6 @@ function Base.:*(a::FieldElement, b::FieldElement)::FieldElement
     return FieldElement(aggregate, a.semantic, true)
 end
 
-function Base.:-(a::FieldElement, b::FieldElement)::FieldElement
-    return a + b
-end
-
-
 function power(a::FieldElement, exponent::UInt128)::FieldElement
     result = FieldElement(UInt128(1), a.semantic, true)  # Initialize to 1
     base = a

@@ -21,15 +21,21 @@ include("algorithms/gcm.jl")
 include("algorithms/padding_oracle.jl")
 
 
-file::String = "./sample.json"
-
-if length(ARGS) == 1
-    file = ARGS[1]
+function julia_main()::Cint
+    try
+        file::String = "./sample.json"
+        if length(ARGS) == 1
+            file = ARGS[1]
+        end
+        jsonContent = JSON.parsefile(file)
+        process(jsonContent)
+        return 0
+    catch e
+        println(stderr, "Error: ", e)
+        return 1
+    end
 end
 
-jsonContent = JSON.parsefile(file)
-process(jsonContent)
-
-export process
+export julia_main
 
 end
