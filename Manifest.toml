@@ -70,9 +70,9 @@ version = "1.0.0"
 
 [[deps.Nettle_jll]]
 deps = ["Artifacts", "GMP_jll", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "d67b4fddbd1b07888ed2680646a44740f492f1ca"
+git-tree-sha1 = "19961ade0a39b98575505bed6f842e8a0ec35af9"
 uuid = "4c82536e-c426-54e4-b420-14f461c4ed8b"
-version = "3.9.1+0"
+version = "3.10.0+0"
 
 [[deps.OpenBLAS_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "Libdl"]

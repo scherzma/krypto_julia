@@ -1,4 +1,4 @@
-#!/usr/bin/env julia
+#!/usr/local/bin/julia
 
 using JSON
 #using PackageCompiler
@@ -15,7 +15,7 @@ function main()
     end
     
     jsonContent = JSON.parsefile(file)
-    @time process(jsonContent)
+    process(jsonContent)
 end
 
 
