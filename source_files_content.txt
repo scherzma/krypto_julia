@@ -17,6 +17,8 @@ Directory Structure:
             📄 semantic_types.jl (Content follows below)
         📄 Krypto.jl (Content follows below)
     📄 .gitignore
+    📄 build.jl (Content follows below)
+    📄 build_cl.jl (Content follows below)
     📄 kauma
     📄 Manifest.toml
     📄 Project.toml
@@ -31,12 +33,61 @@ File Contents:
 
 
 ===========================================
+File: build.jl
+===========================================
+
+#!/usr/local/bin/julia
+
+using PackageCompiler
+
+
+create_app(".", "Krypto",
+    precompile_execution_file="./kauma",
+    cpu_target="native",
+)
+
+# julia --threads=auto --project=. kauma
+
+
+===========================================
+File: build_cl.jl
+===========================================
+
+using Pkg
+using PackageCompiler
+
+# Ensure required packages are installed
+required_packages = ["JSON", "Nettle", "Sockets", "Base64"]
+
+for package in required_packages
+    if !haskey(Pkg.project().dependencies, package)
+        Pkg.add(package)
+    end
+end
+
+# Create executable from Krypto module
+create_app(".", "build", precompile_execution_file="kauma", force=true)
+
+# Make the compiled executable executable
+chmod(joinpath("build", "bin", "Krypto"), 0o755)
+
+# Create symlink for easier access
+symlink_path = "Krypto"
+if islink(symlink_path)
+    rm(symlink_path)
+end
+symlink(joinpath("build", "bin", "Krypto"), symlink_path)
+
+println("Build complete! You can now run ./Krypto sample.json")
+
+===========================================
 File: kauma
 ===========================================
 
 #!/usr/local/bin/julia
 
 using JSON
+#using PackageCompiler
 
 include("src/Krypto.jl")
 using .Krypto: process
@@ -55,6 +106,16 @@ end
 
 
 main()
+
+
+#create_app(".", "Krypto",
+#    precompile_execution_file="./kauma",
+#    force=true,
+#    filter_stdlibs=true,
+#    cpu_target="native",
+#)
+
+# julia --threads=auto --project=. kauma
 
 
 ===========================================
@@ -109,14 +170,14 @@ function ghash(key::Array{UInt8}, nonce::Array{UInt8}, text::Array{UInt8}, ad::A
 
     enc_func = algorithm == "aes128" ? encrypt : encrypt_sea 
     auth_key = enc_func("aes128", key, zeros(UInt8, 16))
-    auth_key = FieldElement(arr_to_int(auth_key), from_string("gcm"))
+    auth_key = FieldElement(arr_to_int(auth_key), "gcm")
 
     len_block = vcat(
         reverse(reinterpret(UInt8, [length(ad) << 3])),
         reverse(reinterpret(UInt8, [length(text) << 3]))
     )
     
-    Y = FieldElement(UInt128(0), from_string("gcm"))
+    Y = FieldElement(UInt128(0), "gcm")
     data = [pad_array(ad); pad_array(text); len_block]
 
     for i in 1:16:(length(data) - 1)
@@ -302,9 +363,8 @@ File: src\math\galois_fast.jl
 struct FieldElement
     value::UInt128
     semantic::Semantic
-    skip_manipulation::Bool
 
-    function FieldElement(value::UInt128, semantic::Semantic, skip_manipulation::Bool=false)::FieldElement
+    function FieldElement(value::UInt128, semantic::Semantic)::FieldElement
         new(value, semantic)
     end
 end
@@ -313,15 +373,14 @@ end
 @inline Base.:⊻(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value ⊻ b.value, a.semantic)
 @inline Base.:⊻(a::FieldElement, b::UInt128)::FieldElement = FieldElement(a.value ⊻ b, a.semantic)
 @inline Base.:>>(a::FieldElement, b::Int)::FieldElement = FieldElement(a.value >> b, a.semantic)
-@inline Base.:>>(a::FieldElement, b::Int)::FieldElement = FieldElement(a.value >> b, a.semantic)
 @inline Base.:%(a::FieldElement, b::UInt128)::FieldElement = FieldElement(a.value % b, a.semantic)
 @inline Base.:%(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value % b.value, a.semantic)
 @inline Base.show(io::IO, a::FieldElement)::Nothing = print(io, "FieldElement($(a.value), $(a.semantic))")
 @inline bit_string(a::FieldElement)::String = join(reverse(digits(a.value, base=2, pad=128)))
 @inline to_polynomial(a::FieldElement)::Array{UInt8} = [x for x in 0:127 if (a.value >> x) % 2 == 1]
 @inline get_bytes(a::FieldElement)::Vector{UInt8} = base64decode(a.to_block())
-@inline Base.:+(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value ⊻ b.value, a.semantic, true)
-@inline Base.:-(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value ⊻ b.value, a.semantic, true)
+@inline Base.:+(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value ⊻ b.value, a.semantic)
+@inline Base.:-(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value ⊻ b.value, a.semantic)
 @inline Base.:<(a::FieldElement, b::FieldElement)::Bool = a.value < b.value
 @inline Base.:>(a::FieldElement, b::FieldElement)::Bool = a.value > b.value
 @inline Base.:(==)(a::FieldElement, b::FieldElement)::Bool = a.value == b.value
@@ -359,8 +418,8 @@ end
     return result
 end
 
-function FieldElement(x::UInt128, semantic::Semantic)::FieldElement
-    FieldElement(int_to_semantic(x, semantic), semantic, true)
+function FieldElement(x::UInt128, semantic::String)::FieldElement
+    FieldElement(int_to_semantic(x, semantic), from_string(semantic))
 end
 
 function FieldElement(poly::Array{UInt8}, semantic::Semantic)::FieldElement
@@ -371,13 +430,13 @@ function FieldElement(poly::Array{UInt8}, semantic::Semantic)::FieldElement
             aggregate |= (one << i)
         end
     end
-    FieldElement(aggregate, semantic, true)
+    FieldElement(aggregate, semantic)
 end
 
 function FieldElement(base64::String, semantic::Semantic)::FieldElement
     a_array = base64decode(base64)
     value::UInt128 = uint8_to_uint128(a_array)
-    FieldElement(int_to_semantic(value, semantic), semantic, true)
+    FieldElement(int_to_semantic(value, semantic), semantic)
 end
 
 
@@ -389,7 +448,7 @@ function Base.:+(a::FieldElement, b::Vector{UInt8})::FieldElement
     value = uint8_to_uint128(b)
     int_value = int_to_semantic(value, a.semantic)
 
-    return FieldElement(int_value ⊻ a.value, a.semantic, true)
+    return FieldElement(int_value ⊻ a.value, a.semantic)
 end
 
 
@@ -414,7 +473,7 @@ function Base.:*(a::FieldElement, b::FieldElement)::FieldElement
         aggregate ⊻= tmp_a * (tmp_b & UInt128(1))
     end
     
-    return FieldElement(aggregate, a.semantic, true)
+    return FieldElement(aggregate, a.semantic)
 end
 
 function Base.:-(a::FieldElement, b::FieldElement)::FieldElement
@@ -423,7 +482,7 @@ end
 
 
 function power(a::FieldElement, exponent::UInt128)::FieldElement
-    result = FieldElement(UInt128(1), a.semantic, true)  # Initialize to 1
+    result = FieldElement(UInt128(1), a.semantic)  # Initialize to 1
     base = a
 
     @inbounds for i in 0:127
@@ -460,7 +519,7 @@ function Base.:÷(a::FieldElement, b::FieldElement)::FieldElement # Polynomial L
         throw(ErrorException("Division by zero"))
     end
     if a.value == 0
-        return FieldElement(UInt128(0), a.semantic, true)
+        return FieldElement(UInt128(0), a.semantic)
     end
     if b.value == 1
         return a
@@ -480,7 +539,7 @@ function Base.:÷(a::FieldElement, b::FieldElement)::FieldElement # Polynomial L
         quotient |= UInt128(1) << shift
         numerator_degree = 127 - leading_zeros(numerator)
     end
-    return FieldElement(quotient, a.semantic, true)
+    return FieldElement(quotient, a.semantic)
 end
 
 
@@ -540,7 +599,7 @@ struct Polynomial
 end
 
 function Polynomial(coefficients::Array{String})::Polynomial
-    elements::Array{FieldElement} = [FieldElement(x, from_string("gcm")) for x in coefficients]
+    elements::Array{FieldElement} = [FieldElement(x, "gcm") for x in coefficients]
     return Polynomial(elements)   # Probably have to reverse the coefficients
 end
 
@@ -561,7 +620,7 @@ function reduce_pol(p::Polynomial)::Polynomial
     end
 
     if new_power == 0
-        return Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)])
+        return Polynomial([FieldElement(UInt128(0), from_string("gcm"))])
     end
     
     return Polynomial(p.coefficients[1:new_power])
@@ -609,7 +668,7 @@ end
 function Base.:*(a::Polynomial, b::Polynomial)::Polynomial
     result_coefficients::Array{FieldElement} = Array{FieldElement}(undef, a.power + b.power)
     for i in 1:length(result_coefficients)
-        result_coefficients[i] = FieldElement(UInt128(0), from_string("gcm"))
+        result_coefficients[i] = FieldElement(UInt128(0), "gcm")
     end
 
     for i in 1:a.power
@@ -622,10 +681,10 @@ end
 
 function Base.:^(a::Polynomial, b::Int)::Polynomial
     if b == 0
-        return Polynomial([FieldElement(UInt128(1), from_string("gcm"), true)])
+        return Polynomial([FieldElement(UInt128(1), from_string("gcm"))])
     end
     
-    result = Polynomial([FieldElement(UInt128(1), from_string("gcm"), true)])
+    result = Polynomial([FieldElement(UInt128(1), from_string("gcm"))])
     base = a
     exponent = b
 
@@ -648,13 +707,13 @@ function Base.:/(a::Polynomial, b::Polynomial)::Tuple{Polynomial, Polynomial}
     end
 
     if a.power < b.power
-        quotient = Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)])
+        quotient = Polynomial([FieldElement(UInt128(0), from_string("gcm"))])
         remainder = reduce_pol(a)
         return (quotient, remainder)
     end
 
     quotient_degree = a.power - b.power
-    zero_fe = FieldElement(UInt128(0), from_string("gcm"))
+    zero_fe = FieldElement(UInt128(0), "gcm")
     quotient_coeffs = fill(zero_fe, quotient_degree + 1)
     remainder_coeffs = copy(a.coefficients)
     remainder_degree = a.power
@@ -682,7 +741,7 @@ function Base.:/(a::Polynomial, b::Polynomial)::Tuple{Polynomial, Polynomial}
     quotient = Polynomial(quotient_coeffs).reduce_pol()
 
     if remainder_degree == 0 && remainder_coeffs[1].value == 0
-        remainder = Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)])
+        remainder = Polynomial([FieldElement(UInt128(0), from_string("gcm"))])
     else
         remainder = Polynomial(remainder_coeffs[1:remainder_degree]).reduce_pol()
     end
@@ -694,7 +753,7 @@ function gfpoly_powmod(A::Polynomial, M::Polynomial, k::Integer)::Polynomial
     if k < 0
         throw(ArgumentError("Exponent must be non-negative"))
     end
-    one_fe = FieldElement(UInt128(1), from_string("gcm"), true)
+    one_fe = FieldElement(UInt128(1), from_string("gcm"))
     result = Polynomial([one_fe])
 
     _, base = A / M
@@ -748,14 +807,14 @@ end
 
 function diff(poly::Polynomial)::Polynomial
     derivative_coeffs::Array{FieldElement} = []
-    coeff::FieldElement = FieldElement(UInt128(0), from_string("gcm"))
+    coeff::FieldElement = FieldElement(UInt128(0), "gcm")
 
     for i in 1:poly.power
         if isodd(i)
             coeff = poly.coefficients[i + 1]
             push!(derivative_coeffs, coeff)
         else
-            push!(derivative_coeffs, FieldElement(UInt128(0), from_string("gcm")))
+            push!(derivative_coeffs, FieldElement(UInt128(0), "gcm"))
         end
     end
 
@@ -818,13 +877,13 @@ end
 
 function poly2block(jsonContent::Dict)
     coefficients::Array{UInt8} = jsonContent["coefficients"]
-    semantic = from_string(jsonContent["semantic"])
+    semantic = jsonContent["semantic"]
     gf = FieldElement(coefficients, semantic)
     return gf.to_block()
 end
 
 function block2poly(jsonContent::Dict)
-    semantic = from_string(jsonContent["semantic"])
+    semantic = jsonContent["semantic"]
     block::String = jsonContent["block"]
 
     gf = FieldElement(block, semantic)
@@ -834,7 +893,7 @@ function block2poly(jsonContent::Dict)
 end
 
 function gfmul(jsonContent::Dict)
-    semantic = from_string(jsonContent["semantic"])
+    semantic = jsonContent["semantic"]
     a::String = jsonContent["a"]
     b::String = jsonContent["b"]
 
@@ -966,8 +1025,8 @@ function gfdiv(jsonContent::Dict)
     A::String = jsonContent["a"]
     B::String = jsonContent["b"]
 
-    a = FieldElement(A, from_string("gcm"))
-    b = FieldElement(B, from_string("gcm"))
+    a = FieldElement(A, "gcm")
+    b = FieldElement(B, "gcm")
     c = a / b
     return c.to_block()
 end
@@ -1071,7 +1130,7 @@ function process(jsonContent::Dict)
         try
             result = ACTIONS[action][1](arguments)
         catch e
-            # println(stderr, "Error: $e")
+            println(stderr, "Error: $e")
             continue
         end
 

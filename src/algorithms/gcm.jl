@@ -6,14 +6,14 @@ function ghash(key::Array{UInt8}, nonce::Array{UInt8}, text::Array{UInt8}, ad::A
 
     enc_func = algorithm == "aes128" ? encrypt : encrypt_sea 
     auth_key = enc_func("aes128", key, zeros(UInt8, 16))
-    auth_key = FieldElement(arr_to_int(auth_key), from_string("gcm"))
+    auth_key = FieldElement(arr_to_int(auth_key), GCM, false)
 
     len_block = vcat(
         reverse(reinterpret(UInt8, [length(ad) << 3])),
         reverse(reinterpret(UInt8, [length(text) << 3]))
     )
     
-    Y = FieldElement(UInt128(0), from_string("gcm"))
+    Y = FieldElement(UInt128(0), GCM, false)
     data = [pad_array(ad); pad_array(text); len_block]
 
     for i in 1:16:(length(data) - 1)

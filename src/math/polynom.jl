@@ -1,3 +1,4 @@
+
 struct Polynomial
     coefficients::Array{FieldElement}
     power::Int
@@ -8,7 +9,7 @@ struct Polynomial
 end
 
 function Polynomial(coefficients::Array{String})::Polynomial
-    elements::Array{FieldElement} = [FieldElement(x, from_string("gcm")) for x in coefficients]
+    elements::Array{FieldElement} = [FieldElement(x, GCM) for x in coefficients]
     return Polynomial(elements)   # Probably have to reverse the coefficients
 end
 
@@ -29,7 +30,7 @@ function reduce_pol(p::Polynomial)::Polynomial
     end
 
     if new_power == 0
-        return Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)])
+        return Polynomial([FieldElement(UInt128(0), GCM, true)])
     end
     
     return Polynomial(p.coefficients[1:new_power])
@@ -77,7 +78,7 @@ end
 function Base.:*(a::Polynomial, b::Polynomial)::Polynomial
     result_coefficients::Array{FieldElement} = Array{FieldElement}(undef, a.power + b.power)
     for i in 1:length(result_coefficients)
-        result_coefficients[i] = FieldElement(UInt128(0), from_string("gcm"))
+        result_coefficients[i] = FieldElement(UInt128(0), GCM, false)
     end
 
     for i in 1:a.power
@@ -90,10 +91,10 @@ end
 
 function Base.:^(a::Polynomial, b::Int)::Polynomial
     if b == 0
-        return Polynomial([FieldElement(UInt128(1), from_string("gcm"), true)])
+        return Polynomial([FieldElement(UInt128(1), GCM, true)])
     end
     
-    result = Polynomial([FieldElement(UInt128(1), from_string("gcm"), true)])
+    result = Polynomial([FieldElement(UInt128(1), GCM, true)])
     base = a
     exponent = b
 
@@ -116,13 +117,13 @@ function Base.:/(a::Polynomial, b::Polynomial)::Tuple{Polynomial, Polynomial}
     end
 
     if a.power < b.power
-        quotient = Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)])
+        quotient = Polynomial([FieldElement(UInt128(0), GCM, true)])
         remainder = reduce_pol(a)
         return (quotient, remainder)
     end
 
     quotient_degree = a.power - b.power
-    zero_fe = FieldElement(UInt128(0), from_string("gcm"))
+    zero_fe = FieldElement(UInt128(0), GCM, false)
     quotient_coeffs = fill(zero_fe, quotient_degree + 1)
     remainder_coeffs = copy(a.coefficients)
     remainder_degree = a.power
@@ -150,7 +151,7 @@ function Base.:/(a::Polynomial, b::Polynomial)::Tuple{Polynomial, Polynomial}
     quotient = Polynomial(quotient_coeffs).reduce_pol()
 
     if remainder_degree == 0 && remainder_coeffs[1].value == 0
-        remainder = Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)])
+        remainder = Polynomial([FieldElement(UInt128(0), GCM, true)])
     else
         remainder = Polynomial(remainder_coeffs[1:remainder_degree]).reduce_pol()
     end
@@ -162,7 +163,7 @@ function gfpoly_powmod(A::Polynomial, M::Polynomial, k::Integer)::Polynomial
     if k < 0
         throw(ArgumentError("Exponent must be non-negative"))
     end
-    one_fe = FieldElement(UInt128(1), from_string("gcm"), true)
+    one_fe = FieldElement(UInt128(1), GCM, true)
     result = Polynomial([one_fe])
 
     _, base = A / M
@@ -216,14 +217,14 @@ end
 
 function diff(poly::Polynomial)::Polynomial
     derivative_coeffs::Array{FieldElement} = []
-    coeff::FieldElement = FieldElement(UInt128(0), from_string("gcm"))
+    coeff::FieldElement = FieldElement(UInt128(0), GCM, false)
 
     for i in 1:poly.power
         if isodd(i)
             coeff = poly.coefficients[i + 1]
             push!(derivative_coeffs, coeff)
         else
-            push!(derivative_coeffs, FieldElement(UInt128(0), from_string("gcm")))
+            push!(derivative_coeffs, FieldElement(UInt128(0), GCM, false))
         end
     end
 

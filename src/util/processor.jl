@@ -156,8 +156,8 @@ function gfdiv(jsonContent::Dict)
     A::String = jsonContent["a"]
     B::String = jsonContent["b"]
 
-    a = FieldElement(A, from_string("gcm"))
-    b = FieldElement(B, from_string("gcm"))
+    a = FieldElement(A, GCM)
+    b = FieldElement(B, GCM)
     c = a / b
     return c.to_block()
 end
@@ -258,12 +258,12 @@ function process(jsonContent::Dict)
         output_key = ACTIONS[action][2]
         result = nothing
         #println("Processing $action >>> ")
-        try
+        #try
             result = ACTIONS[action][1](arguments)
-        catch e
-            # println(stderr, "Error: $e")
-            continue
-        end
+        #catch e
+        #    println(stderr, "Error: $e")
+        #    continue
+        #end
 
         json_result = Dict()
 

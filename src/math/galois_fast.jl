@@ -3,17 +3,21 @@ struct FieldElement
     semantic::Semantic
     skip_manipulation::Bool
 
-    function FieldElement(value::UInt128, semantic::Semantic, skip_manipulation::Bool=false)::FieldElement
-        new(value, semantic)
+    function FieldElement(value::UInt128, semantic::Semantic, skip_manipulation::Bool)::FieldElement
+        if skip_manipulation
+            return new(value, semantic, skip_manipulation)
+        else
+            return new(int_to_semantic(value, semantic), semantic, true)
+        end
     end
 end
 
 
-@inline Base.:⊻(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value ⊻ b.value, a.semantic)
-@inline Base.:⊻(a::FieldElement, b::UInt128)::FieldElement = FieldElement(a.value ⊻ b, a.semantic)
-@inline Base.:>>(a::FieldElement, b::Int)::FieldElement = FieldElement(a.value >> b, a.semantic)
-@inline Base.:%(a::FieldElement, b::UInt128)::FieldElement = FieldElement(a.value % b, a.semantic)
-@inline Base.:%(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value % b.value, a.semantic)
+@inline Base.:⊻(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value ⊻ b.value, a.semantic, true)
+@inline Base.:⊻(a::FieldElement, b::UInt128)::FieldElement = FieldElement(a.value ⊻ b, a.semantic, true)
+@inline Base.:>>(a::FieldElement, b::Int)::FieldElement = FieldElement(a.value >> b, a.semantic, true)
+@inline Base.:%(a::FieldElement, b::UInt128)::FieldElement = FieldElement(a.value % b, a.semantic, true)
+@inline Base.:%(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value % b.value, a.semantic, true)
 @inline Base.show(io::IO, a::FieldElement)::Nothing = print(io, "FieldElement($(a.value), $(a.semantic))")
 @inline bit_string(a::FieldElement)::String = join(reverse(digits(a.value, base=2, pad=128)))
 @inline to_polynomial(a::FieldElement)::Array{UInt8} = [x for x in 0:127 if (a.value >> x) % 2 == 1]
@@ -55,10 +59,6 @@ end
                  (UInt128(bytes[13]) << 24) | (UInt128(bytes[14]) << 16) | (UInt128(bytes[15]) << 8)  | UInt128(bytes[16])
     end
     return result
-end
-
-function FieldElement(x::UInt128, semantic::Semantic)::FieldElement
-    FieldElement(int_to_semantic(x, semantic), semantic, true)
 end
 
 function FieldElement(poly::Array{UInt8}, semantic::Semantic)::FieldElement
