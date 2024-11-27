@@ -6,25 +6,21 @@ Directory Structure:
         📁 algorithms/
             📄 gcm.jl (Content follows below)
             📄 padding_oracle.jl (Content follows below)
+            📄 padding_oracle.jl.print
             📄 sea128.jl (Content follows below)
             📄 xex_fde.jl (Content follows below)
         📁 math/
-            📄 galois.jl.bak
             📄 galois_fast.jl (Content follows below)
             📄 polynom.jl (Content follows below)
-        📁 testing/
-            📄 padding_notes.txt (Content follows below)
-            📄 performance_arr_to_int.jl (Content follows below)
-            📄 performance_int_semantic.jl (Content follows below)
-            📄 performance_multiply.jl (Content follows below)
         📁 util/
             📄 processor.jl (Content follows below)
             📄 semantic_types.jl (Content follows below)
         📄 Krypto.jl (Content follows below)
+    📄 .gitignore
+    📄 kauma
     📄 Manifest.toml
     📄 Project.toml
     📄 README.md
-    📄 kauma
     📄 sample.json
     📄 sample_small.json
     📄 script.py
@@ -38,14 +34,12 @@ File Contents:
 File: kauma
 ===========================================
 
-#!/usr/bin/env julia
+#!/usr/local/bin/julia
 
 using JSON
-#using PackageCompiler
 
-
-include("src/util/processor.jl")
-using .Processing: process
+include("src/Krypto.jl")
+using .Krypto: process
 
 function main()
     file::String = "./sample.json"
@@ -63,63 +57,66 @@ end
 main()
 
 
-#create_app(".", "Krypto",
-#    precompile_execution_file="./kauma",
-#    force=true,
-#    filter_stdlibs=true,
-#    cpu_target="native",
-#)
-
-# julia --threads=auto --project=. kauma
-
 ===========================================
-File: src/Krypto.jl
+File: src\Krypto.jl
 ===========================================
 
 module Krypto
 
 using JSON
+using Sockets 
+using Base64
+import Base: +, *, ⊻, <<, >>, %, show, length, ^, ÷, /, copy, <, >, ==, isless, √, getproperty, zeros
+using Nettle: encrypt, decrypt
+
+const SEA_CONST = Array{UInt8}([0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0x11])
+const GF128_MODULUS = UInt128(0x87)  # x^128 + x^7 + x^2 + x + 1
+const MASK_128 = UInt128(1) << 127
+const BIT_REVERSE_TABLE = UInt8[0, 128, 64, 192, 32, 160, 96, 224, 16, 144, 80, 208, 48, 176, 112, 240, 8, 136, 72, 200, 40, 168, 104, 232, 24, 152, 88, 216, 56, 184, 120, 248, 4, 132, 68, 196, 36, 164, 100, 228, 20, 148, 84, 212, 52, 180, 116, 244, 12, 140, 76, 204, 44, 172, 108, 236, 28, 156, 92, 220, 60, 188, 124, 252, 2, 130, 66, 194, 34, 162, 98, 226, 18, 146, 82, 210, 50, 178, 114, 242, 10, 138, 74, 202, 42, 170, 106, 234, 26, 154, 90, 218, 58, 186, 122, 250, 6, 134, 70, 198, 38, 166, 102, 230, 22, 150, 86, 214, 54, 182, 118, 246, 14, 142, 78, 206, 46, 174, 110, 238, 30, 158, 94, 222, 62, 190, 126, 254, 1, 129, 65, 193, 33, 161, 97, 225, 17, 145, 81, 209, 49, 177, 113, 241, 9, 137, 73, 201, 41, 169, 105, 233, 25, 153, 89, 217, 57, 185, 121, 249, 5, 133, 69, 197, 37, 165, 101, 229, 21, 149, 85, 213, 53, 181, 117, 245, 13, 141, 77, 205, 45, 173, 109, 237, 29, 157, 93, 221, 61, 189, 125, 253, 3, 131, 67, 195, 35, 163, 99, 227, 19, 147, 83, 211, 51, 179, 115, 243, 11, 139, 75, 203, 43, 171, 107, 235, 27, 155, 91, 219, 59, 187, 123, 251, 7, 135, 71, 199, 39, 167, 103, 231, 23, 151, 87, 215, 55, 183, 119, 247, 15, 143, 79, 207, 47, 175, 111, 239, 31, 159, 95, 223, 63, 191, 127, 255]
+
+include("util/semantic_types.jl")
 include("util/processor.jl")
+include("math/galois_fast.jl")
+include("math/polynom.jl")
+include("algorithms/sea128.jl")
+include("algorithms/xex_fde.jl")
+include("algorithms/gcm.jl")
+include("algorithms/padding_oracle.jl")
+
+
+file::String = "./sample.json"
+
+if length(ARGS) == 1
+    file = ARGS[1]
+end
+
+jsonContent = JSON.parsefile(file)
+process(jsonContent)
 
 export process
 
 end
 
 ===========================================
-File: src/algorithms/gcm.jl
+File: src\algorithms\gcm.jl
 ===========================================
 
-
-module GCM
-
-
-include("../util/semantic_types.jl")
-using .SemanticTypes
-
-include("sea128.jl")
-include("../math/galois_fast.jl")
-using Nettle
-using Base64
-using .Sea128: encrypt_sea, decrypt_sea
-using .Galois_quick: FieldElement
-
-
 arr_to_int(arr::Array{UInt8}) = reinterpret(UInt128, reverse(arr))[1]
-padl(len::Int) = (16 - (len & 0x0F)) & 0x0F ## pad with zeros to the next multiple of 16
+padl(len::Int) = (16 - (len % 16)) % 16 ## pad with zeros to the next multiple of 16
 pad_array(arr::Array{UInt8}) = [arr; zeros(UInt8, padl(length(arr)))]
 
 function ghash(key::Array{UInt8}, nonce::Array{UInt8}, text::Array{UInt8}, ad::Array{UInt8}, algorithm::String)
 
     enc_func = algorithm == "aes128" ? encrypt : encrypt_sea 
     auth_key = enc_func("aes128", key, zeros(UInt8, 16))
-    auth_key = FieldElement(arr_to_int(auth_key), SemanticTypes.GCM)
+    auth_key = FieldElement(arr_to_int(auth_key), from_string("gcm"))
 
     len_block = vcat(
         reverse(reinterpret(UInt8, [length(ad) << 3])),
         reverse(reinterpret(UInt8, [length(text) << 3]))
     )
     
-    Y = FieldElement(UInt128(0), SemanticTypes.GCM)
+    Y = FieldElement(UInt128(0), from_string("gcm"))
     data = [pad_array(ad); pad_array(text); len_block]
 
     for i in 1:16:(length(data) - 1)
@@ -139,13 +136,15 @@ function crypt_gcm(key::Array{UInt8}, text::Array{UInt8}, nonce::Array{UInt8}, a
     enc_func = algorithm == "aes128" ? encrypt : encrypt_sea
 
 
+    counter = 2
     for i in 1:16:(length(text))
-        temp_nonce = [nonce; reverse!(reinterpret(UInt8, [UInt32(i+1)]))]
+        temp_nonce = [nonce; reverse!(reinterpret(UInt8, [UInt32(counter)]))]
         enc_i = enc_func("AES128", key, temp_nonce)
         end_idx = min(i+15, length(text))
         block = text[i:end_idx]
         enc_block = enc_i[1:length(block)]
         append!(result_text, block .⊻ enc_block)
+        counter += 1
     end
 
     return result_text
@@ -164,18 +163,10 @@ function encrypt_gcm(key::Array{UInt8}, plaintext::Array{UInt8}, ad::Array{UInt8
     return ciphertext, auth_tag[1], auth_tag[2], auth_tag[3]
 end
 
-end
 
 ===========================================
-File: src/algorithms/padding_oracle.jl
+File: src\algorithms\padding_oracle.jl
 ===========================================
-
-module PaddingOracle
-
-using Sockets 
-using Base: zeros
-using Base64
-using Nettle
 
 struct PaddingClient
     connection::TCPSocket
@@ -191,7 +182,7 @@ function attack_block(hostname::String, port::Int, block::Array{UInt8}, previous
     write(client.connection, block)  # Send the block to be decrypted
     
     plaintext_block = zeros(UInt8, length(block))
-    num_ivs::UInt16 = 128
+    num_ivs::UInt16 = 256
     x_values = UInt8[]
 
     for current_byte in length(block):-1:1
@@ -265,35 +256,16 @@ function padding_attack(hostname::String, port::Int, iv::Array{UInt8}, ciphertex
     return de_pad(plaintext)
 end
 
-
-
-end
-
 ===========================================
-File: src/algorithms/sea128.jl
+File: src\algorithms\sea128.jl
 ===========================================
-
-module Sea128
-
-using Nettle
-
-const SEA_CONST = Array{UInt8}([0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0x11])
 
 encrypt_sea(algorithm::String, key::Array{UInt8}, input::Array{UInt8}) = encrypt(algorithm, key, input) .⊻ SEA_CONST
 decrypt_sea(algorithm::String, key::Array{UInt8}, input::Array{UInt8}) = decrypt(algorithm, key, input .⊻ SEA_CONST)
 
-end
-
 ===========================================
-File: src/algorithms/xex_fde.jl
+File: src\algorithms\xex_fde.jl
 ===========================================
-
-module FDE
-
-include("sea128.jl")
-using .Sea128: encrypt_sea, decrypt_sea
-using Base64
-
 
 function mul_alpha!(tweak::Vector{UInt8})
     carry = (tweak[16] & 0x80) != 0
@@ -323,33 +295,20 @@ end
 encrypt_fde(key::Array{UInt8}, tweak::Array{UInt8}, input::Array{UInt8}) = crypt_fde(key, tweak, input, "encrypt")
 decrypt_fde(key::Array{UInt8}, tweak::Array{UInt8}, input::Array{UInt8}) = crypt_fde(key, tweak, input, "decrypt")
 
-end
-
 ===========================================
-File: src/math/galois_fast.jl
+File: src\math\galois_fast.jl
 ===========================================
-
-
-module Galois_quick
-
-using ..SemanticTypes: Semantic, GCM, XEX
-using Base64
-
-import Base: +, *, ⊻, <<, >>, %, show, length, /
 
 struct FieldElement
     value::UInt128
     semantic::Semantic
+    skip_manipulation::Bool
 
-    function FieldElement(value::UInt128, semantic::Semantic, skip_mani::Bool=false)::FieldElement
+    function FieldElement(value::UInt128, semantic::Semantic, skip_manipulation::Bool=false)::FieldElement
         new(value, semantic)
     end
 end
 
-const GF128_MODULUS = UInt128(0x87)  # x^128 + x^7 + x^2 + x + 1
-const MASK_128 = UInt128(1) << 127
-
-const BIT_REVERSE_TABLE = UInt8[0, 128, 64, 192, 32, 160, 96, 224, 16, 144, 80, 208, 48, 176, 112, 240, 8, 136, 72, 200, 40, 168, 104, 232, 24, 152, 88, 216, 56, 184, 120, 248, 4, 132, 68, 196, 36, 164, 100, 228, 20, 148, 84, 212, 52, 180, 116, 244, 12, 140, 76, 204, 44, 172, 108, 236, 28, 156, 92, 220, 60, 188, 124, 252, 2, 130, 66, 194, 34, 162, 98, 226, 18, 146, 82, 210, 50, 178, 114, 242, 10, 138, 74, 202, 42, 170, 106, 234, 26, 154, 90, 218, 58, 186, 122, 250, 6, 134, 70, 198, 38, 166, 102, 230, 22, 150, 86, 214, 54, 182, 118, 246, 14, 142, 78, 206, 46, 174, 110, 238, 30, 158, 94, 222, 62, 190, 126, 254, 1, 129, 65, 193, 33, 161, 97, 225, 17, 145, 81, 209, 49, 177, 113, 241, 9, 137, 73, 201, 41, 169, 105, 233, 25, 153, 89, 217, 57, 185, 121, 249, 5, 133, 69, 197, 37, 165, 101, 229, 21, 149, 85, 213, 53, 181, 117, 245, 13, 141, 77, 205, 45, 173, 109, 237, 29, 157, 93, 221, 61, 189, 125, 253, 3, 131, 67, 195, 35, 163, 99, 227, 19, 147, 83, 211, 51, 179, 115, 243, 11, 139, 75, 203, 43, 171, 107, 235, 27, 155, 91, 219, 59, 187, 123, 251, 7, 135, 71, 199, 39, 167, 103, 231, 23, 151, 87, 215, 55, 183, 119, 247, 15, 143, 79, 207, 47, 175, 111, 239, 31, 159, 95, 223, 63, 191, 127, 255]
 
 @inline Base.:⊻(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value ⊻ b.value, a.semantic)
 @inline Base.:⊻(a::FieldElement, b::UInt128)::FieldElement = FieldElement(a.value ⊻ b, a.semantic)
@@ -362,7 +321,22 @@ const BIT_REVERSE_TABLE = UInt8[0, 128, 64, 192, 32, 160, 96, 224, 16, 144, 80, 
 @inline to_polynomial(a::FieldElement)::Array{UInt8} = [x for x in 0:127 if (a.value >> x) % 2 == 1]
 @inline get_bytes(a::FieldElement)::Vector{UInt8} = base64decode(a.to_block())
 @inline Base.:+(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value ⊻ b.value, a.semantic, true)
+@inline Base.:-(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value ⊻ b.value, a.semantic, true)
+@inline Base.:<(a::FieldElement, b::FieldElement)::Bool = a.value < b.value
+@inline Base.:>(a::FieldElement, b::FieldElement)::Bool = a.value > b.value
+@inline Base.:(==)(a::FieldElement, b::FieldElement)::Bool = a.value == b.value
+@inline Base.isless(a::FieldElement, b::FieldElement)::Bool = a.value < b.value
 
+function Base.:√(a::FieldElement)::FieldElement
+    if is_zero(a)
+        return a
+    end
+    result = a
+    for _ in 1:127
+        result = result * result
+    end
+    return result
+end
 
 
 @inline function int_to_semantic(x::UInt128, semantic::Semantic)::UInt128
@@ -384,8 +358,6 @@ end
     end
     return result
 end
-
-
 
 function FieldElement(x::UInt128, semantic::Semantic)::FieldElement
     FieldElement(int_to_semantic(x, semantic), semantic, true)
@@ -445,9 +417,45 @@ function Base.:*(a::FieldElement, b::FieldElement)::FieldElement
     return FieldElement(aggregate, a.semantic, true)
 end
 
+function Base.:-(a::FieldElement, b::FieldElement)::FieldElement
+    return a + b
+end
 
 
-function Base.:/(a::FieldElement, b::FieldElement)::FieldElement # http://www.ee.unb.ca/cgi-bin/tervo/calc.pl?num=100100101010101011011111000111&den=1111001110010101&f=d&e=1&p=1&m=1
+function power(a::FieldElement, exponent::UInt128)::FieldElement
+    result = FieldElement(UInt128(1), a.semantic, true)  # Initialize to 1
+    base = a
+
+    @inbounds for i in 0:127
+        if (exponent >> i) & 1 == 1
+            result = result * base
+        end
+        base = base * base
+    end
+
+    return result
+end
+
+function inverse(a::FieldElement)::FieldElement
+    if is_zero(a)
+        throw(ArgumentError("Cannot invert the zero element"))
+    end
+    exponent = UInt128(~UInt128(0)) - UInt128(1)  # 2^128 - 2
+    return power(a, exponent)
+end
+
+
+# Corrected Division Function Using the Correct Inverse
+function Base.:/(a::FieldElement, b::FieldElement)::FieldElement
+    if b.value == 0
+        throw(ErrorException("Division by zero"))
+    end
+    return a * inverse(b)
+end
+
+
+# Corrected Polynomial Long Division (÷)
+function Base.:÷(a::FieldElement, b::FieldElement)::FieldElement # Polynomial Long Division
     if b.value == 0
         throw(ErrorException("Division by zero"))
     end
@@ -511,35 +519,16 @@ import Base: getproperty
     if sym === :is_zero
         return () -> is_zero(gf)
     end
+    if sym === :inverse
+        return () -> inverse(gf)
+    end
     return getfield(gf, sym)
 end
 
 
-
-
-
-end
-
-
-
-
-
 ===========================================
-File: src/math/polynom.jl
+File: src\math\polynom.jl
 ===========================================
-
-module Polynom
-
-
-
-include("../util/semantic_types.jl")
-using .SemanticTypes: Semantic, from_string
-using Base64
-
-include("galois_fast.jl")
-using .Galois_quick: FieldElement
-
-import Base: +, *, ⊻, <<, >>, %, show, length, ^, ÷, /
 
 struct Polynomial
     coefficients::Array{FieldElement}
@@ -556,7 +545,12 @@ function Polynomial(coefficients::Array{String})::Polynomial
 end
 
 
-function reduce_polynomial(p::Polynomial)::Polynomial
+function is_zero(p::Polynomial)::Bool
+    return p.power == 0 || (p.power == 1 && p.coefficients[1].is_zero())
+end
+
+
+function reduce_pol(p::Polynomial)::Polynomial
     new_power = p.power
     while new_power > 0 && p.coefficients[new_power].value == 0
         new_power -= 1
@@ -565,10 +559,31 @@ function reduce_polynomial(p::Polynomial)::Polynomial
     if new_power == p.power
         return p
     end
+
+    if new_power == 0
+        return Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)])
+    end
     
     return Polynomial(p.coefficients[1:new_power])
 end
 
+function Base.isless(a::Polynomial, b::Polynomial)::Bool
+    if a.power < b.power
+        return true
+    elseif a.power > b.power
+        return false
+    else
+        # Degrees are equal, compare coefficients from highest to lowest
+        for i in a.power:-1:1
+            if isless(a.coefficients[i], b.coefficients[i])
+                return true
+            elseif isless(b.coefficients[i], a.coefficients[i])
+                return false
+            end
+        end
+        return false  # Polynomials are equal
+    end
+end
 
 function Base.:+(a::Polynomial, b::Polynomial)::Polynomial
 
@@ -584,7 +599,11 @@ function Base.:+(a::Polynomial, b::Polynomial)::Polynomial
         end
     end
 
-    return Polynomial(result_coefficients).reduce()
+    return Polynomial(result_coefficients).reduce_pol()
+end
+
+function Base.:-(a::Polynomial, b::Polynomial)::Polynomial
+    return a + b
 end
 
 function Base.:*(a::Polynomial, b::Polynomial)::Polynomial
@@ -598,7 +617,7 @@ function Base.:*(a::Polynomial, b::Polynomial)::Polynomial
             result_coefficients[i+j - 1] += a.coefficients[i] * b.coefficients[j]
         end
     end
-    return Polynomial(result_coefficients).reduce()
+    return Polynomial(result_coefficients).reduce_pol()
 end
 
 function Base.:^(a::Polynomial, b::Int)::Polynomial
@@ -618,46 +637,147 @@ function Base.:^(a::Polynomial, b::Int)::Polynomial
         exponent >>= 1
     end
 
-    return result.reduce()
+    return result.reduce_pol()
 end
 
+Base.copy(p::Polynomial) = Polynomial(copy(p.coefficients))
 
-# Overload the division operator to perform polynomial long division
-# Returns a tuple (quotient, remainder)
-function ÷(a::Polynomial, b::Polynomial)::Tuple{Polynomial, Polynomial}
-
-    if b.power < 0 || all(fe.value == 0 for fe in b.coefficients)
-        error("Division by zero polynomial is not allowed.")
+function Base.:/(a::Polynomial, b::Polynomial)::Tuple{Polynomial, Polynomial}
+    if b.power == 0 && b.coefficients[1].value == 0
+        throw(DivError("Polynomial division by zero"))
     end
 
-    dividend = a.coefficients
-    divisor = b.coefficients
-
-    deg_dividend = a.power
-    deg_divisor = b.power
-
-    if deg_divisor > deg_dividend
-        return Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)]), a
+    if a.power < b.power
+        quotient = Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)])
+        remainder = reduce_pol(a)
+        return (quotient, remainder)
     end
 
-    quotient = [FieldElement(UInt128(0), from_string("gcm"), true) for _ in 1:(deg_dividend - deg_divisor + 1)]
+    quotient_degree = a.power - b.power
+    zero_fe = FieldElement(UInt128(0), from_string("gcm"))
+    quotient_coeffs = fill(zero_fe, quotient_degree + 1)
+    remainder_coeffs = copy(a.coefficients)
+    remainder_degree = a.power
+    b_lead_coeff = b.coefficients[b.power]
+    b_inv_lead = b_lead_coeff.inverse()  # Assuming an inverse method exists
 
-    while length(dividend) >= length(divisor)
-        leading_term = dividend[end] / divisor[end]
-        quotient[length(dividend) - length(divisor) + 1] = leading_term
+    b_coeffs = b.coefficients
+    b_power = b.power
 
-        # Subtract the scaled divisor from the dividend
-
-        for i in 1:length(divisor)
-            dividend[length(dividend) - length(divisor) + i] += leading_term * divisor[i]
+    # Main division loop
+    while remainder_degree >= b_power && remainder_degree > 0
+        lead_coeff_rem = remainder_coeffs[remainder_degree]
+        factor = lead_coeff_rem * b_inv_lead
+        degree_diff = remainder_degree - b_power
+        quotient_coeffs[degree_diff + 1] += factor
+        @inbounds for i in 1:b_power
+            j = i + degree_diff
+            remainder_coeffs[j] -= b_coeffs[i] * factor
         end
-
-        # Remove leading zeros
-        dividend = dividend.reduce()
+        while remainder_degree > 0 && remainder_coeffs[remainder_degree].value == 0
+            remainder_degree -= 1
+        end
     end
 
-    return Polynomial(quotient), a - Polynomial(quotient) * b
+    quotient = Polynomial(quotient_coeffs).reduce_pol()
+
+    if remainder_degree == 0 && remainder_coeffs[1].value == 0
+        remainder = Polynomial([FieldElement(UInt128(0), from_string("gcm"), true)])
+    else
+        remainder = Polynomial(remainder_coeffs[1:remainder_degree]).reduce_pol()
+    end
+
+    return (quotient, remainder)
 end
+
+function gfpoly_powmod(A::Polynomial, M::Polynomial, k::Integer)::Polynomial
+    if k < 0
+        throw(ArgumentError("Exponent must be non-negative"))
+    end
+    one_fe = FieldElement(UInt128(1), from_string("gcm"), true)
+    result = Polynomial([one_fe])
+
+    _, base = A / M
+
+    while k > 0
+        if (k & 1) == 1
+            tmp = result * base
+            _, result = tmp / M
+        end
+        tmp = base * base
+        _, base = tmp / M
+        k >>= 1
+    end
+
+    return result
+end
+
+
+function Base.:√(Q::Polynomial)::Polynomial
+
+    # Validate that Q has only even exponents with non-zero coefficients
+    for i in 0:(Q.power - 1)
+        if isodd(i) && Q.coefficients[i + 1].value != 0
+            throw(ArgumentError("Polynomial Q must have only even exponents with non-zero coefficients."))
+        end
+    end
+
+    # The degree of the square root polynomial S will be floor(Q.power / 2)
+    m = div(Q.power, 2)
+    S_coeffs = Vector{FieldElement}(undef, m + 1)
+
+    for i in 0:m
+        q_2i = Q.coefficients[2 * i + 1]
+        S_coeffs[i + 1] = √q_2i
+    end
+
+    return Polynomial(S_coeffs).reduce_pol()
+end
+
+
+function monic(A::Polynomial)::Polynomial
+    if A.power == 0 && A.coefficients[1].value == 0
+        throw(ArgumentError("Cannot make the zero polynomial monic"))
+    end
+    c = A.coefficients[A.power]
+    c_inv = c.inverse()
+    new_coeffs = [coeff * c_inv for coeff in A.coefficients]
+    return Polynomial(new_coeffs).reduce_pol()
+end
+
+
+function diff(poly::Polynomial)::Polynomial
+    derivative_coeffs::Array{FieldElement} = []
+    coeff::FieldElement = FieldElement(UInt128(0), from_string("gcm"))
+
+    for i in 1:poly.power
+        if isodd(i)
+            coeff = poly.coefficients[i + 1]
+            push!(derivative_coeffs, coeff)
+        else
+            push!(derivative_coeffs, FieldElement(UInt128(0), from_string("gcm")))
+        end
+    end
+
+    derivative_poly = Polynomial(derivative_coeffs).reduce_pol()
+
+    return derivative_poly
+end
+
+
+
+function gcd(A::Polynomial, B::Polynomial)::Polynomial
+    a = reduce_pol(A)
+    b = reduce_pol(B)
+
+    while !is_zero(b)
+        _, r = a / b
+        a, b = b, r
+    end
+
+    return monic(a)
+end
+
 
 
 function repr(p::Polynomial)::Array{String}
@@ -665,401 +785,28 @@ function repr(p::Polynomial)::Array{String}
 end
 
 
-import Base: getproperty
 @inline function getproperty(p::Polynomial, sym::Symbol)
     if sym === :repr
         return () -> repr(p)
     end
-    if sym === :reduce
-        return () -> reduce_polynomial(p)
+    if sym === :reduce_pol
+        return () -> reduce_pol(p)
+    end
+    if sym === :monic
+        return () -> monic(p)
+    end
+    if sym === :diff
+        return () -> diff(p)
+    end
+    if sym === :gcd
+        return (b::Polynomial) -> gcd(p, b)
     end
     return getfield(p, sym)
 end
 
-end
-
 ===========================================
-File: src/testing/padding_notes.txt
+File: src\util\processor.jl
 ===========================================
-
-XXXXXXXXXXXXXXXX
-XOR
-YYYYYYYYYYYYYYYY
-=
-HALLOHALLOHALLOH
-
-H ^ ? = 2
-H ^ 2 = ?
-
-
-XXXXXXXXXXXXXXXX
-XOR
----------------6
-=
----------------1
-
-X ^ 6 = 1
-X ^ Y = H
-
-H = ?
-X = ?
-
-6 ^ 1 = X
-X ^ Y = H
-
-(6 ^ 1) ^ Y = H
-
-
-
-H ^ Y = X
-
-Y ^ X = H
-? ^ X = i
-
-X = Y ^ H
-X = i ^ ?
-
-
-
-
-
-XXXXXXXXXXXXXXXX = ?
-XOR
-YYYYYYYYYYYYYYYY
-=
-HALLOHALLOHALLOH = ?
-
-
-XXXXXXXXXXXXXXXX
-XOR
----------------6
-=
----------------1
-
-XXXXXXXXXXXXXXXX
-XOR
---------------??
-=
---------------22
-
-X ^ 6 = 1
-X ^ ? = 2
-
-X = 6 ^ 1
-(6 ^ 1) ^ 2 = ? = 5
-
-
-XXXXXXXXXXXXXXXX
-XOR
---------------?5
-=
---------------22
-
-
-
-XXXXXXXXXXXXXXXX
-XOR
---------------85
-=
---------------22
-
-X2 = ?
-O = ? 
-
-X2 ^ 8 = 2
-8 ^ 2 = X2
-
-O = X2 ^ Y2 = Y2 ^ (8 ^ 2)
-
-
-8 ^ ? = 3
-5 ^ ? = 3
-
-===========================================
-File: src/testing/performance_arr_to_int.jl
-===========================================
-
-using BenchmarkTools
-
-# Original function
-@inline function uint8_to_uint128_original(bytes::Vector{UInt8})::UInt128
-    # length(bytes) == 16 || throw(ArgumentError("Input must be exactly 16 bytes")) # This should really be checked, but it's a tiny bit slower
-    @inbounds begin
-        result = (UInt128(bytes[1]) << 120) | (UInt128(bytes[2]) << 112) | 
-                 (UInt128(bytes[3]) << 104) | (UInt128(bytes[4]) << 96) |
-                 (UInt128(bytes[5]) << 88)  | (UInt128(bytes[6]) << 80) | 
-                 (UInt128(bytes[7]) << 72)  | (UInt128(bytes[8]) << 64) |
-                 (UInt128(bytes[9]) << 56)  | (UInt128(bytes[10]) << 48) | 
-                 (UInt128(bytes[11]) << 40) | (UInt128(bytes[12]) << 32) |
-                 (UInt128(bytes[13]) << 24) | (UInt128(bytes[14]) << 16) | 
-                 (UInt128(bytes[15]) << 8)  | UInt128(bytes[16])
-    end
-    return result
-end
-
-# Alternative implementation using folding
-@inline function uint8_to_uint128_folded(bytes::Vector{UInt8})::UInt128
-    @inbounds begin
-        # Split into 4 parts for better pipelining
-        upper = (UInt128(bytes[1]) << 120) | (UInt128(bytes[2]) << 112) | 
-                (UInt128(bytes[3]) << 104) | (UInt128(bytes[4]) << 96)
-        
-        upper_mid = (UInt128(bytes[5]) << 88) | (UInt128(bytes[6]) << 80) | 
-                    (UInt128(bytes[7]) << 72) | (UInt128(bytes[8]) << 64)
-        
-        lower_mid = (UInt128(bytes[9]) << 56) | (UInt128(bytes[10]) << 48) | 
-                    (UInt128(bytes[11]) << 40) | (UInt128(bytes[12]) << 32)
-        
-        lower = (UInt128(bytes[13]) << 24) | (UInt128(bytes[14]) << 16) | 
-                (UInt128(bytes[15]) << 8) | UInt128(bytes[16])
-
-        # Combine the parts
-        result = upper | upper_mid | lower_mid | lower
-    end
-    return result
-end
-
-# Benchmark setup
-function run_benchmarks()
-    # Generate random test data
-    test_bytes = rand(UInt8, 16)
-    
-    # Verify correctness
-    result_original = uint8_to_uint128_original(test_bytes)
-    result_folded = uint8_to_uint128_folded(test_bytes)
-    @assert result_original == result_folded "Implementations produce different results!"
-
-    println("\nOriginal implementation:")
-    @btime uint8_to_uint128_original($(test_bytes))
-    
-    println("\nFolded implementation:")
-    @btime uint8_to_uint128_folded($(test_bytes))
-
-    # Stress test
-    stress_test_size = 10000
-    test_data = [rand(UInt8, 16) for _ in 1:stress_test_size]
-    
-    println("\nStress test with $stress_test_size random byte arrays:")
-    println("Original:")
-    @btime for bytes in $test_data
-        uint8_to_uint128_original(bytes)
-    end
-
-    println("\nFolded:")
-    @btime for bytes in $test_data
-        uint8_to_uint128_folded(bytes)
-    end
-end
-
-# Run the benchmarks
-run_benchmarks()
-
-===========================================
-File: src/testing/performance_int_semantic.jl
-===========================================
-
-using BenchmarkTools
-
-@enum Semantic GCM XEX
-
-
-# First implementation using if-else
-@inline first(x::UInt128, ::Val{GCM}) = bitreverse(x)
-@inline first(x::UInt128, ::Val{XEX}) = bswap(x)
-
-# Alternative implementation using ternary operator
-@inline function second(x::UInt128, semantic::Semantic)
-    if semantic == GCM
-        return bitreverse(x)
-    elseif semantic == XEX
-        return bswap(x)
-    end
-end
-
-function run_benchmarks()
-    # Quick correctness check
-    test_val = rand(UInt128)
-    @assert first(test_val, Val(GCM)) == second(test_val, GCM)
-    @assert first(test_val, Val(XEX)) == second(test_val, XEX)
-
-    # Large-scale performance test
-    test_size = 100_000_000
-    test_numbers = [rand(UInt128) for _ in 1:test_size]
-    
-    println("\nLarge-scale performance test with $test_size iterations:")
-
-    println("\n1:")
-    @btime for x in $test_numbers
-        first(x, Val(GCM))
-    end
-
-    @btime for x in $test_numbers
-        first(x, Val(XEX))
-    end
-
-    println("\n2:")
-    @btime for x in $test_numbers
-        second(x, XEX)
-    end
-
-    @btime for x in $test_numbers
-        second(x, GCM)
-    end
-
-end
-
-run_benchmarks()
-
-===========================================
-File: src/testing/performance_multiply.jl
-===========================================
-
-using BenchmarkTools
-using Base.Threads
-# Constants
-const GF128_MODULUS = UInt128(0x87)  # Standard GF(2^128) modulus
-
-# Original struct definition modified to use only UInt128
-struct FieldElement
-    value::UInt128
-    semantic::Symbol  # Using Symbol instead of String for better performance
-    reduced::Bool
-end
-
-
-
-# Original multiplication function
-@inline function mult_original(a::FieldElement, b::FieldElement)
-    aggregate = UInt128(0)
-    tmp_a::UInt128 = a.value
-    tmp_b::UInt128 = b.value
-    
-    if (tmp_b & UInt128(1)) == 1
-        aggregate ⊻= tmp_a
-    end
-    
-    @inbounds for _ in 1:16  # 128/8 = 16 iterations
-        for _ in 1:8
-            prev_high_bit = tmp_a >> 127
-            tmp_a <<= UInt128(1)
-            tmp_a ⊻= GF128_MODULUS * prev_high_bit
-
-            tmp_b >>= 1
-            aggregate ⊻= tmp_a * (tmp_b & UInt128(1))
-        end
-    end
-    
-    return FieldElement(aggregate, a.semantic, true)
-end
-
-
-# SIMD-optimized version (experimental)
-@inline function mult_safe(a::FieldElement, b::FieldElement)
-    aggregate = UInt128(0)
-    tmp_a::UInt128 = a.value
-    tmp_b::UInt128 = b.value
-    
-    if (tmp_b & UInt128(1)) == 1
-        aggregate ⊻= tmp_a
-    end
-    
-    @inbounds for _ in 1:16  # 128/8 = 16 iterations
-        for _ in 1:8
-            prev_high_bit = tmp_a >> 127
-            tmp_a <<= 1
-            tmp_a ⊻= GF128_MODULUS * prev_high_bit
-
-            tmp_b >>= 1
-            aggregate ⊻= tmp_a * (tmp_b & 1)
-        end
-    end
-    
-    return FieldElement(aggregate, a.semantic, true)
-end
-
-
-
-
-
-
-
-
-# Benchmark setup
-function run_benchmarks()
-    # Generate random test values
-    test_a = FieldElement(rand(UInt128), :xex, true)
-    test_b = FieldElement(rand(UInt128), :xex, true)
-    
-    # Verify correctness
-    result_original = mult_original(test_a, test_b)
-    result_simd = mult_safe(test_a, test_b)
-    
-    @assert result_original.value == result_simd.value "SIMD version produces different results!"
-
-
-    
-
-    println("Original implementation:")
-    @btime mult_original($(test_a), $(test_b))
-
-
-    println("\nSafe implementation:")
-    @btime mult_safe($(test_a), $(test_b))
-
-
-
-    
-    # Additional stress test
-    stress_test_size = 10000
-    test_data = [(FieldElement(rand(UInt128), :gcm, true), 
-                    FieldElement(rand(UInt128), :gcm, true)) 
-                 for _ in 1:stress_test_size]
-    
-    println("\nStress test with $stress_test_size random pairs:")
-    println("Original:")
-    @btime for (a, b) in $test_data
-        mult_original(a, b)
-    end
-
-    
-    println("\nSafe:")
-    @btime for (a, b) in $test_data
-        mult_safe(a, b)
-    end
-end
-
-# Run the benchmarks
-run_benchmarks()
-
-===========================================
-File: src/util/processor.jl
-===========================================
-
-
-
-module Processing
-using JSON
-using Base64
-
-include("../util/semantic_types.jl")
-using .SemanticTypes: Semantic, from_string
-include("../math/galois_fast.jl")
-using .Galois_quick: FieldElement
-include("../math/polynom.jl")
-using .Polynom: Polynomial
-include("../algorithms/sea128.jl")
-include("../algorithms/xex_fde.jl")
-include("../algorithms/gcm.jl")
-include("../algorithms/padding_oracle.jl")
-using .PaddingOracle: PaddingClient, padding_attack
-using .Galois_quick: FieldElement
-using .Polynom: Polynomial
-using .Sea128: encrypt_sea, decrypt_sea
-using .FDE: encrypt_fde, decrypt_fde
-using .GCM: encrypt_gcm, decrypt_gcm
-using Base.Threads
-
-
 
 function add_numbers(jsonContent::Dict)
     return jsonContent["number1"] + jsonContent["number2"]
@@ -1183,8 +930,8 @@ function padding_oracle(jsonContent::Dict)
     iv::Array{UInt8} = base64decode(jsonContent["iv"])
     ciphertext::Array{UInt8} = base64decode(jsonContent["ciphertext"])
     #result = padding_attack(hostname, port, iv, ciphertext)
-    result = "plaintext"
-    return base64encode(result)
+    #return base64encode(result)
+    return "test"
 end
 
 function polynomial_add(jsonContent::Dict)
@@ -1215,15 +962,14 @@ function polynomial_pow(jsonContent::Dict)
     return (poly_A ^ B).repr()
 end
 
-function polynomial_div(jsonContent::Dict)
+function gfdiv(jsonContent::Dict)
     A::String = jsonContent["a"]
     B::String = jsonContent["b"]
 
     a = FieldElement(A, from_string("gcm"))
     b = FieldElement(B, from_string("gcm"))
-    #c = a / b
-    #return c.to_block()
-    return "result"
+    c = a / b
+    return c.to_block()
 end
 
 function polynomial_divmod(jsonContent::Dict)
@@ -1232,10 +978,53 @@ function polynomial_divmod(jsonContent::Dict)
 
     poly_A = Polynomial(A)
     poly_B = Polynomial(B)
+    result = poly_A / poly_B
+    return result[1].repr(), result[2].repr()
+end
 
-    #result = poly_A ÷ poly_B
-    #return result[1].repr(), result[2].repr()
-    return "result", "result"
+function polynomial_powmod(jsonContent::Dict)
+    A::Array{String} = jsonContent["A"]
+    M::Array{String} = jsonContent["M"]
+    k::Int = jsonContent["k"]
+
+    poly_A = Polynomial(A)
+    poly_M = Polynomial(M)
+
+    return gfpoly_powmod(poly_A, poly_M, k).repr()
+end
+
+function polynomial_sort(jsonContent::Dict)
+    polys_str::Array{Array{String}} = jsonContent["polys"]
+    polys = [Polynomial(poly) for poly in polys_str]
+    sorted_polys = sort(polys)
+    return [poly.repr() for poly in sorted_polys]
+end
+
+function polynomial_make_monic(jsonContent::Dict)
+    A::Array{String} = jsonContent["A"]
+    poly_A = Polynomial(A)
+    return poly_A.monic().repr()
+end
+
+function polynomial_sqrt(jsonContent::Dict)
+    Q::Array{String} = jsonContent["Q"]
+    poly_Q = Polynomial(Q)
+    return (√poly_Q).repr()
+end
+
+function polynomial_diff(jsonContent::Dict)
+    F::Array{String} = jsonContent["F"]
+    poly_F = Polynomial(F)
+    return poly_F.diff().repr()
+end
+
+function polynomial_gcd(jsonContent::Dict)
+    A::Array{String} = jsonContent["A"]
+    B::Array{String} = jsonContent["B"]
+    poly_A = Polynomial(A)
+    poly_B = Polynomial(B)
+    ans = poly_A.gcd(poly_B)
+    return ans.repr()
 end
 
 ACTIONS::Dict{String, Vector{Any}} = Dict(
@@ -1243,17 +1032,23 @@ ACTIONS::Dict{String, Vector{Any}} = Dict(
     "subtract_numbers" => [subtract_numbers, ["difference"]],
     "poly2block" => [poly2block, ["block"]],
     "block2poly" => [block2poly, ["coefficients"]],
-    "gfmul" => [gfmul, ["polynomial"]],
-    "sea128" => [sea128, ["ciphertext"]],
-    "xex" => [xex, ["ciphertext"]],
+    "gfmul" => [gfmul, ["product"]],
+    "sea128" => [sea128, ["output"]],
+    "xex" => [xex, ["output"]],
     "gcm_encrypt" => [gcm_encrypt, ["ciphertext", "tag", "L", "H"]],
     "gcm_decrypt" => [gcm_decrypt, ["authentic", "plaintext"]],
     "padding_oracle" => [padding_oracle, ["plaintext"]],
     "gfpoly_add" => [polynomial_add, ["S"]],
     "gfpoly_mul" => [polynomial_mul, ["P"]],
     "gfpoly_pow" => [polynomial_pow, ["Z"]],
-    "gfdiv" => [polynomial_div, ["q"]],
+    "gfdiv" => [gfdiv, ["q"]],
     "gfpoly_divmod" => [polynomial_divmod, ["Q", "R"]],
+    "gfpoly_powmod" => [polynomial_powmod, ["Z"]],
+    "gfpoly_sort" => [polynomial_sort, ["sorted_polys"]],
+    "gfpoly_make_monic" => [polynomial_make_monic, ["A*"]],
+    "gfpoly_sqrt" => [polynomial_sqrt, ["S"]],
+    "gfpoly_diff" => [polynomial_diff, ["F'"]],
+    "gfpoly_gcd" => [polynomial_gcd, ["G"]],
 )
 
 function process(jsonContent::Dict)
@@ -1263,17 +1058,21 @@ function process(jsonContent::Dict)
     for (key, value) in jsonContent["testcases"]
         action = value["action"]
         arguments = value["arguments"]
-        output_key = ACTIONS[action][2]
 
         if !haskey(ACTIONS, action)
-            throw(ProcessingError("Unknown action: $action"))
+            #throw(ErrorException("Unknown action: $action"))
+            continue
         end
 
+
+        output_key = ACTIONS[action][2]
         result = nothing
+        #println("Processing $action >>> ")
         try
             result = ACTIONS[action][1](arguments)
         catch e
-            println(stderr, "Error: $e")
+            # println(stderr, "Error: $e")
+            continue
         end
 
         json_result = Dict()
@@ -1289,22 +1088,16 @@ function process(jsonContent::Dict)
         result_testcases[key] = json_result
     end
 
-    println(JSON.json(Dict("testcases" => result_testcases)))
-
-end
+    println(JSON.json(Dict("responses" => result_testcases)))
 
 end
 
 ===========================================
-File: src/util/semantic_types.jl
+File: src\util\semantic_types.jl
 ===========================================
 
-module SemanticTypes
 @enum Semantic GCM XEX
 
 function from_string(s::String)::Semantic
     return s == "gcm" ? GCM : XEX
-end
-
-export Semantic, GCM, XEX, from_string
 end

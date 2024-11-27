@@ -20,6 +20,16 @@ include("algorithms/xex_fde.jl")
 include("algorithms/gcm.jl")
 include("algorithms/padding_oracle.jl")
 
+
+file::String = "./sample.json"
+
+if length(ARGS) == 1
+    file = ARGS[1]
+end
+
+jsonContent = JSON.parsefile(file)
+process(jsonContent)
+
 export process
 
 end
