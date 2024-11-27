@@ -3,9 +3,8 @@
 using JSON
 #using PackageCompiler
 
-
-include("src/util/processor.jl")
-using .Processing: process
+include("src/Krypto.jl")
+using .Krypto: process
 
 function main()
     file::String = "./sample.json"

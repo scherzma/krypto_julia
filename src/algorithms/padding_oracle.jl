@@ -1,10 +1,3 @@
-module PaddingOracle
-
-using Sockets 
-using Base: zeros
-using Base64
-using Nettle
-
 struct PaddingClient
     connection::TCPSocket
 end
@@ -92,12 +85,3 @@ function padding_attack(hostname::String, port::Int, iv::Array{UInt8}, ciphertex
 
     return de_pad(plaintext)
 end
-
-
-
-end
-
-
-
-
-

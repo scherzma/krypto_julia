@@ -1,16 +1,3 @@
-module Polynom
-
-
-
-include("../util/semantic_types.jl")
-using .SemanticTypes: Semantic, from_string
-using Base64
-
-include("galois_fast.jl")
-using .Galois_quick: FieldElement
-
-import Base: +, *, ⊻, <<, >>, %, show, length, ^, ÷, /, copy, <, >, ==, isless, √
-
 struct Polynomial
     coefficients::Array{FieldElement}
     power::Int
@@ -266,7 +253,6 @@ function repr(p::Polynomial)::Array{String}
 end
 
 
-import Base: getproperty
 @inline function getproperty(p::Polynomial, sym::Symbol)
     if sym === :repr
         return () -> repr(p)
@@ -284,6 +270,4 @@ import Base: getproperty
         return (b::Polynomial) -> gcd(p, b)
     end
     return getfield(p, sym)
-end
-
 end

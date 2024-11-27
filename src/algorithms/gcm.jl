@@ -1,18 +1,3 @@
-
-module GCM
-
-
-include("../util/semantic_types.jl")
-using .SemanticTypes
-
-include("sea128.jl")
-include("../math/galois_fast.jl")
-using Nettle
-using Base64
-using .Sea128: encrypt_sea, decrypt_sea
-using .Galois_quick: FieldElement
-
-
 arr_to_int(arr::Array{UInt8}) = reinterpret(UInt128, reverse(arr))[1]
 padl(len::Int) = (16 - (len % 16)) % 16 ## pad with zeros to the next multiple of 16
 pad_array(arr::Array{UInt8}) = [arr; zeros(UInt8, padl(length(arr)))]
@@ -74,7 +59,3 @@ function encrypt_gcm(key::Array{UInt8}, plaintext::Array{UInt8}, ad::Array{UInt8
     auth_tag = ghash(key, nonce, ciphertext, ad, algorithm)
     return ciphertext, auth_tag[1], auth_tag[2], auth_tag[3]
 end
-
-
-end
-
