@@ -1,4 +1,4 @@
-#!/usr/local/bin/julia
+#!/usr/local/bin/julia -O0
 
 using JSON
 #using PackageCompiler
