@@ -1,7 +1,23 @@
-#!/bin/bash
+#!/usr/local/bin/julia -O0
 
-# Get the directory where the script is located
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+using JSON
 
-# Forward all arguments to the Krypto executable using absolute path.
-"$SCRIPT_DIR/kauma.jl" "$@"
+include("src/Krypto.jl")
+using .Krypto: process
+
+function main()
+
+    file::String = "./sample.json"
+
+    if length(ARGS) == 1
+        file = ARGS[1]
+    end
+    
+    jsonContent = JSON.parsefile(file)
+    process(jsonContent)
+    
+end
+
+
+
+main()
