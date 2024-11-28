@@ -241,16 +241,22 @@ ACTIONS::Dict{String, Vector{Any}} = Dict(
     "gfpoly_gcd" => [polynomial_gcd, ["G"]],
 )
 
-function process(jsonContent::Dict)
+function process(jsonContent::Dict, alt::Bool=false)
 
     result_testcases = Dict()
 
-    for (key, value) in jsonContent["testcases"]
+    for item in jsonContent["testcases"]
+
+        if alt
+            key, value = item["name"], item["testcase_data"]
+        else
+            key, value = item
+        end
+
         action = value["action"]
         arguments = value["arguments"]
 
         if !haskey(ACTIONS, action)
-            #throw(ErrorException("Unknown action: $action"))
             continue
         end
 
@@ -258,12 +264,12 @@ function process(jsonContent::Dict)
         output_key = ACTIONS[action][2]
         result = nothing
         #println("Processing $action >>> ")
-        #try
+        try
             result = ACTIONS[action][1](arguments)
-        #catch e
-        #    println(stderr, "Error: $e")
-        #    continue
-        #end
+        catch e
+            println(stderr, "Error: $e")
+            continue
+        end
 
         json_result = Dict()
 
@@ -278,6 +284,10 @@ function process(jsonContent::Dict)
         result_testcases[key] = json_result
     end
 
-    println(JSON.json(Dict("responses" => result_testcases)))
-
+    if alt
+        return JSON.json(Dict("responses" => result_testcases))
+    else
+        println(JSON.json(Dict("responses" => result_testcases)))
+        return nothing
+    end
 end

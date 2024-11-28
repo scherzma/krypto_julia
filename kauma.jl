@@ -8,6 +8,7 @@ include("src/util/processor.jl")
 using .Processing: process
 
 function main()
+    
     file::String = "./sample.json"
 
     if length(ARGS) == 1

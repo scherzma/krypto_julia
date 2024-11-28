@@ -36,6 +36,6 @@ function julia_main()::Cint
     end
 end
 
-export julia_main
+export julia_main, process
 
 end

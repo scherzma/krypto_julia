@@ -1,0 +1,30 @@
+#!/usr/local/bin/julia -O0
+
+using JSON
+
+include("src/Krypto.jl")
+using .Krypto: process
+
+function main()
+    alt::Bool = true
+
+    file::String = "./sample_alt.json"
+
+    if length(ARGS) == 1
+        file = ARGS[1]
+    end
+    
+    jsonContent = JSON.parsefile(file)
+    
+    if alt
+        result = process(jsonContent, alt)
+        write("./result_alt.json", result)
+    else
+        process(jsonContent, alt)
+    end
+    
+end
+
+
+
+main()
