@@ -1,30 +1,3 @@
-
-
-module Processing
-using JSON
-using Base64
-
-include("../util/semantic_types.jl")
-using .SemanticTypes: Semantic, from_string
-include("../math/polynom.jl")
-using .Polynom: Polynomial, gfpoly_powmod
-include("../math/galois_fast.jl")
-using .Galois_quick: FieldElement
-
-include("../algorithms/sea128.jl")
-include("../algorithms/xex_fde.jl")
-include("../algorithms/gcm.jl")
-include("../algorithms/padding_oracle.jl")
-using .PaddingOracle: PaddingClient, padding_attack
-using .Galois_quick: FieldElement
-using .Polynom: Polynomial
-using .Sea128: encrypt_sea, decrypt_sea
-using .FDE: encrypt_fde, decrypt_fde
-using .GCM: encrypt_gcm, decrypt_gcm
-using Base.Threads
-
-
-
 function add_numbers(jsonContent::Dict)
     return jsonContent["number1"] + jsonContent["number2"]
 end
@@ -183,8 +156,8 @@ function gfdiv(jsonContent::Dict)
     A::String = jsonContent["a"]
     B::String = jsonContent["b"]
 
-    a = FieldElement(A, from_string("gcm"))
-    b = FieldElement(B, from_string("gcm"))
+    a = FieldElement(A, GCM)
+    b = FieldElement(B, GCM)
     c = a / b
     return c.to_block()
 end
@@ -268,16 +241,22 @@ ACTIONS::Dict{String, Vector{Any}} = Dict(
     "gfpoly_gcd" => [polynomial_gcd, ["G"]],
 )
 
-function process(jsonContent::Dict)
+function process(jsonContent::Dict, alt::Bool=false)
 
     result_testcases = Dict()
 
-    for (key, value) in jsonContent["testcases"]
+    for item in jsonContent["testcases"]
+
+        if alt
+            key, value = item["name"], item["testcase_data"]
+        else
+            key, value = item
+        end
+
         action = value["action"]
         arguments = value["arguments"]
 
         if !haskey(ACTIONS, action)
-            #throw(ErrorException("Unknown action: $action"))
             continue
         end
 
@@ -288,7 +267,7 @@ function process(jsonContent::Dict)
         try
             result = ACTIONS[action][1](arguments)
         catch e
-            #println(stderr, "Error: $e")
+            println(stderr, "Error: $e")
             continue
         end
 
@@ -305,8 +284,10 @@ function process(jsonContent::Dict)
         result_testcases[key] = json_result
     end
 
-    println(JSON.json(Dict("responses" => result_testcases)))
-
-end
-
+    if alt
+        return JSON.json(Dict("responses" => result_testcases))
+    else
+        println(JSON.json(Dict("responses" => result_testcases)))
+        return nothing
+    end
 end

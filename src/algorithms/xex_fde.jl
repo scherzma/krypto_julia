@@ -1,9 +1,3 @@
-module FDE
-
-include("sea128.jl")
-using .Sea128: encrypt_sea, decrypt_sea
-using Base64
-
 
 function mul_alpha!(tweak::Vector{UInt8})
     carry = (tweak[16] & 0x80) != 0
@@ -32,5 +26,3 @@ end
 
 encrypt_fde(key::Array{UInt8}, tweak::Array{UInt8}, input::Array{UInt8}) = crypt_fde(key, tweak, input, "encrypt")
 decrypt_fde(key::Array{UInt8}, tweak::Array{UInt8}, input::Array{UInt8}) = crypt_fde(key, tweak, input, "decrypt")
-
-end
