@@ -4,4 +4,4 @@
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 # Forward all arguments to the Krypto executable using absolute path.
-"$SCRIPT_DIR/Krypto/bin/Krypto" "$@"
+"$SCRIPT_DIR/kauma.jl" "$@"

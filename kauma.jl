@@ -1,10 +1,11 @@
-#!/usr/local/bin/julia
+#!/usr/local/bin/julia -O0
 
 using JSON
 #using PackageCompiler
 
-include("src/Krypto.jl")
-using .Krypto: process
+
+include("src/util/processor.jl")
+using .Processing: process
 
 function main()
     file::String = "./sample.json"

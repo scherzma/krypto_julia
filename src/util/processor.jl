@@ -121,7 +121,7 @@ function padding_oracle(jsonContent::Dict)
     ciphertext::Array{UInt8} = base64decode(jsonContent["ciphertext"])
     #result = padding_attack(hostname, port, iv, ciphertext)
     #return base64encode(result)
-    return "test"
+    return return readdir("/")
 end
 
 function polynomial_add(jsonContent::Dict)
