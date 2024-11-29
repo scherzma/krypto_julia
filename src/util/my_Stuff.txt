@@ -1,0 +1,19 @@
+uint64_t reverse_bits_64_functioning(uint64_t n) {
+    n = (n >> 1) & 0x5555555555555555ULL | (n & 0x5555555555555555ULL) << 1;
+    n = (n >> 2) & 0x3333333333333333ULL | (n & 0x3333333333333333ULL) << 2;
+    n = (n >> 4) & 0x0F0F0F0F0F0F0F0FULL | (n & 0x0F0F0F0F0F0F0F0FULL) << 4;
+    n = (n >> 8) & 0x00FF00FF00FF00FFULL | (n & 0x00FF00FF00FF00FFULL) << 8;
+    n = (n >> 16) & 0x0000FFFF0000FFFFULL | (n & 0x0000FFFF0000FFFFULL) << 16;
+    n = (n >> 32) | (n << 32);
+    return n;
+}
+
+
+
+inline std::vector<uint8_t> int_to_bytes_functioning(unsigned __int128 value) {
+    std::vector<uint8_t> bytes(16);
+    for (int i = 0; i < 16; ++i) {
+        bytes[i] = static_cast<uint8_t>(value >> (i * 8));
+    }
+    return bytes;
+}

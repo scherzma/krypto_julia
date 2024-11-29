@@ -4,28 +4,37 @@ Directory Structure:
 📁 krypto_julia/
     📁 src/
         📁 algorithms/
-            📄 gcm.jl (Content follows below)
-            📄 padding_oracle.jl (Content follows below)
-            📄 padding_oracle.jl.print
-            📄 sea128.jl (Content follows below)
-            📄 xex_fde.jl (Content follows below)
+            📄 gcm.cpp (Content follows below)
+            📄 gcm.h (Content follows below)
+            📄 padding_oracle.cpp (Content follows below)
+            📄 padding_oracle.h (Content follows below)
+            📄 sea128.cpp (Content follows below)
+            📄 sea128.h (Content follows below)
+            📄 xex_fde.cpp (Content follows below)
+            📄 xex_fde.h (Content follows below)
         📁 math/
-            📄 galois_fast.jl (Content follows below)
-            📄 polynom.jl (Content follows below)
+            📄 galois.cpp (Content follows below)
+            📄 galois.h (Content follows below)
+            📄 polynom.cpp (Content follows below)
+            📄 polynom.h (Content follows below)
         📁 util/
-            📄 processor.jl (Content follows below)
-            📄 semantic_types.jl (Content follows below)
-        📄 Krypto.jl (Content follows below)
+            📄 base64_utils.cpp (Content follows below)
+            📄 base64_utils.h (Content follows below)
+            📄 helper_functions.h (Content follows below)
+            📄 lookup.h (Content follows below)
+            📄 my_Stuff.txt (Content follows below)
+            📄 processor.cpp (Content follows below)
+            📄 processor.h (Content follows below)
+            📄 semantic_types.h (Content follows below)
+        📄 main.cpp (Content follows below)
     📄 .gitignore
-    📄 build.jl (Content follows below)
-    📄 build_cl.jl (Content follows below)
-    📄 kauma
-    📄 Manifest.toml
-    📄 Project.toml
+    📄 CMakeLists.txt (Content follows below)
     📄 README.md
     📄 sample.json
+    📄 sample_current.json
     📄 sample_small.json
     📄 script.py
+    📄 sol.json
 
 
 File Contents:
@@ -33,1129 +42,1681 @@ File Contents:
 
 
 ===========================================
-File: build.jl
+File: CMakeLists.txt
 ===========================================
 
-#!/usr/local/bin/julia
+cmake_minimum_required(VERSION 3.10)
+project(KryptoCpp)
 
-using PackageCompiler
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(BOTAN_LIBRARIES "botan-2")
 
+# Find Botan
 
-create_app(".", "Krypto",
-    precompile_execution_file="./kauma",
-    cpu_target="native",
-    force=true,
+# Find OpenSSL
+find_package(OpenSSL REQUIRED)
+find_package(nlohmann_json 3.2.0 REQUIRED)
+
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(BOTAN REQUIRED botan-2)
+
+# Recursively find all .cpp files in src/ and its subdirectories
+file(GLOB_RECURSE SOURCES "src/*.cpp")
+
+# Add executable
+add_executable(KryptoCpp ${SOURCES}
+        src/util/lookup.h
+        src/util/helper_functions.h
+        src/math/galois.h)
+
+# Specify include directories for the target
+target_include_directories(KryptoCpp PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/external/json/include  # Adjust if you have external dependencies
+        ${OPENSSL_INCLUDE_DIR}  # Ensure OpenSSL includes are added
+        ${BOTAN_INCLUDE_DIRS}
 )
 
-# julia --threads=auto --project=. kauma
+# Link libraries
+target_link_libraries(KryptoCpp PRIVATE OpenSSL::SSL OpenSSL::Crypto ${BOTAN_LIBRARIES} nlohmann_json::nlohmann_json)
+
+target_compile_options(KryptoCpp PRIVATE ${BOTAN_CFLAGS_OTHER} -msse4.1 -mpclmul)
+
+===========================================
+File: src/main.cpp
+===========================================
+
+#include <nlohmann/json.hpp>
+#include <fstream>
+#include <iostream>
+#include <util/processor.h>
+
+using json = nlohmann::json;
+
+int main(int argc, char* argv[]) {
+    // std::string file = "../sample_small.json";
+    // std::string file = "../sample.json";
+    std::string file = "../sample_current.json";
+    if(argc == 2) {
+        file = argv[1];
+    }
+
+    std::ifstream ifs(file);
+    if(!ifs.is_open()) {
+        std::cerr << "Failed to open file: " << file << std::endl;
+        return 1;
+    }
+
+    json jsonContent;
+    try {
+        ifs >> jsonContent;
+    }
+    catch(const std::exception& e) {
+        std::cerr << "JSON parse error: " << e.what() << std::endl;
+        return 1;
+    }
+
+    json result = process(jsonContent);
+    std::cout << result.dump() << std::endl;
+
+    return 0;
+}
+
+===========================================
+File: src/algorithms/gcm.cpp
+===========================================
+
+// src/algorithms/gcm.cpp
+#include "gcm.h"
+#include "../util/semantic_types.h"
+#include "../util/helper_functions.h"
+#include "../math/galois.h"
+#include "../algorithms/sea128.h"
+#include <vector>
+#include <cstdint>
+#include <stdexcept>
+#include <tuple>
+#include <algorithm>
+#include <functional>
+
+std::tuple<std::vector<uint8_t>, std::vector<uint8_t>, std::vector<uint8_t>, std::vector<uint8_t>> encrypt_gcm(
+    const std::vector<uint8_t>& key,
+    const std::vector<uint8_t>& plaintext,
+    const std::vector<uint8_t>& ad,
+    const std::vector<uint8_t>& nonce,
+    const std::string& algorithm)
+{
+    // Define the encryption function based on the algorithm
+    std::function<std::vector<uint8_t>(const std::vector<uint8_t>&, const std::vector<uint8_t>&)> enc_func;
+    if (algorithm == "aes128") {
+        enc_func = aes_encrypt;
+    }
+    else if (algorithm == "sea128") {
+        enc_func = encrypt_sea;
+    }
+    else {
+        throw std::invalid_argument("Unsupported algorithm: " + algorithm);
+    }
+
+    // Encrypt the zero block to get H
+    std::vector<uint8_t> zero_block(16, 0);
+    std::vector<uint8_t> encrypted_zero = enc_func(key, zero_block);
+    // Convert H to uint128_t
+    __uint128_t H_int = bytes_to_uint128(encrypted_zero);
+    // Create FieldElement H
+    FieldElement H(H_int, Semantic::GCM, false);
+
+    // Compute len_block: length of AD and plaintext in bits, each as 64-bit big-endian
+    uint64_t ad_bit_len = static_cast<uint64_t>(ad.size()) * 8;
+    uint64_t text_bit_len = static_cast<uint64_t>(plaintext.size()) * 8;
+
+    // Convert to big endian bytes
+    std::vector<uint8_t> len_block(16, 0);
+    for(int i = 0; i < 8; ++i){
+        len_block[15 - i] = (ad_bit_len >> (i * 8)) & 0xFF;
+        len_block[7 - i] = (text_bit_len >> (i * 8)) & 0xFF;
+    }
+
+    // Pad AD and plaintext
+    auto pad_array = [&](const std::vector<uint8_t>& arr) -> std::vector<uint8_t> {
+        size_t pad_len = (16 - (arr.size() % 16)) % 16;
+        std::vector<uint8_t> padded = arr;
+        padded.resize(arr.size() + pad_len, 0);
+        return padded;
+    };
+
+    std::vector<uint8_t> padded_ad = pad_array(ad);
+    std::vector<uint8_t> padded_text = pad_array(plaintext);
+
+    // Concatenate padded AD, padded text, and len_block
+    std::vector<uint8_t> data;
+    data.reserve(padded_ad.size() + padded_text.size() + len_block.size());
+    data.insert(data.end(), padded_ad.begin(), padded_ad.end());
+    data.insert(data.end(), padded_text.begin(), padded_text.end());
+    data.insert(data.end(), len_block.begin(), len_block.end());
+
+    // Initialize Y as zero
+    FieldElement Y(0, Semantic::GCM, false);
+
+    // Iterate over each 16-byte block
+    for(size_t i = 0; i < data.size(); i += 16){
+        // Extract 16-byte block
+        std::vector<uint8_t> block(data.begin() + i, data.begin() + i + 16);
+        // Convert block to uint128_t
+        __uint128_t block_int = bytes_to_uint128(block);
+        // Create FieldElement
+        FieldElement block_fe(block_int, Semantic::GCM, false);
+        // Y += block_fe
+        Y = Y + block_fe;
+        // Y *= H
+        Y = Y * H;
+    }
+
+    // Encrypt nonce || 0x00000001 to get S
+    std::vector<uint8_t> ctr_block = nonce;
+    if(nonce.size() != 12){
+        throw std::invalid_argument("Nonce must be 12 bytes for GCM.");
+    }
+    ctr_block.insert(ctr_block.end(), {0, 0, 0, 1});
+    std::vector<uint8_t> S = enc_func(key, ctr_block);
+
+    // Convert Y to uint128_t
+    __uint128_t Y_int = Y.value;
+    // Convert S to uint128_t
+    __uint128_t S_int = bytes_to_uint128(S);
+    // Compute tag: Y ^ S
+    __uint128_t tag_int = Y_int ^ S_int;
+
+    // Convert tag_int to bytes
+    std::vector<uint8_t> tag = int_to_bytes(tag_int);
+
+    // Encrypt plaintext using counter mode to get ciphertext
+    std::vector<uint8_t> ciphertext;
+    ciphertext.reserve(plaintext.size());
+    uint32_t counter = 1;
+    for(size_t i = 0; i < plaintext.size(); i += 16){
+        // Create counter block: nonce || counter
+        std::vector<uint8_t> counter_block = nonce;
+        counter_block.push_back((counter >> 24) & 0xFF);
+        counter_block.push_back((counter >> 16) & 0xFF);
+        counter_block.push_back((counter >> 8) & 0xFF);
+        counter_block.push_back(counter & 0xFF);
+        // Encrypt counter block
+        std::vector<uint8_t> enc_ctr = enc_func(key, counter_block);
+        // Determine block size
+        size_t block_size = std::min(static_cast<size_t>(16), plaintext.size() - i);
+        // XOR plaintext with encrypted counter block
+        for(size_t j = 0; j < block_size; ++j){
+            ciphertext.push_back(plaintext[i + j] ^ enc_ctr[j]);
+        }
+        counter++;
+    }
+
+    // Convert len_block to bytes (already in big-endian)
+    // Convert H to bytes
+    std::vector<uint8_t> auth_key_bytes = int_to_bytes(H.value);
+
+    return {ciphertext, tag, len_block, auth_key_bytes};
+}
+
+std::tuple<std::vector<uint8_t>, __uint128_t, std::vector<uint8_t>> decrypt_gcm(
+    const std::vector<uint8_t>& key,
+    const std::vector<uint8_t>& ciphertext,
+    const std::vector<uint8_t>& ad,
+    const std::vector<uint8_t>& nonce,
+    const std::string& algorithm)
+{
+    // Define the encryption function based on the algorithm
+    std::function<std::vector<uint8_t>(const std::vector<uint8_t>&, const std::vector<uint8_t>&)> enc_func;
+    if (algorithm == "aes128") {
+        enc_func = aes_encrypt;
+    }
+    else if (algorithm == "sea128") {
+        enc_func = encrypt_sea;
+    }
+    else {
+        throw std::invalid_argument("Unsupported algorithm: " + algorithm);
+    }
+
+    // Encrypt the zero block to get H
+    std::vector<uint8_t> zero_block(16, 0);
+    std::vector<uint8_t> encrypted_zero = enc_func(key, zero_block);
+    // Convert H to uint128_t
+    __uint128_t H_int = bytes_to_uint128(encrypted_zero);
+    // Create FieldElement H
+    FieldElement H(H_int, Semantic::GCM, false);
+
+    // Compute len_block: length of AD and ciphertext in bits, each as 64-bit big-endian
+    uint64_t ad_bit_len = static_cast<uint64_t>(ad.size()) * 8;
+    uint64_t text_bit_len = static_cast<uint64_t>(ciphertext.size()) * 8;
+
+    // Convert to big endian bytes
+    std::vector<uint8_t> len_block(16, 0);
+    for(int i = 0; i < 8; ++i){
+        len_block[15 - i] = (ad_bit_len >> (i * 8)) & 0xFF;
+        len_block[7 - i] = (text_bit_len >> (i * 8)) & 0xFF;
+    }
+
+    // Pad AD and ciphertext
+    auto pad_array = [&](const std::vector<uint8_t>& arr) -> std::vector<uint8_t> {
+        size_t pad_len = (16 - (arr.size() % 16)) % 16;
+        std::vector<uint8_t> padded = arr;
+        padded.resize(arr.size() + pad_len, 0);
+        return padded;
+    };
+
+    std::vector<uint8_t> padded_ad = pad_array(ad);
+    std::vector<uint8_t> padded_ciphertext = pad_array(ciphertext);
+
+    // Concatenate padded AD, padded ciphertext, and len_block
+    std::vector<uint8_t> data;
+    data.reserve(padded_ad.size() + padded_ciphertext.size() + len_block.size());
+    data.insert(data.end(), padded_ad.begin(), padded_ad.end());
+    data.insert(data.end(), padded_ciphertext.begin(), padded_ciphertext.end());
+    data.insert(data.end(), len_block.begin(), len_block.end());
+
+    // Initialize Y as zero
+    FieldElement Y(0, Semantic::GCM, false);
+
+    // Iterate over each 16-byte block
+    for(size_t i = 0; i < data.size(); i += 16){
+        // Extract 16-byte block
+        std::vector<uint8_t> block(data.begin() + i, data.begin() + i + 16);
+        // Convert block to uint128_t
+        __uint128_t block_int = bytes_to_uint128(block);
+        // Create FieldElement
+        FieldElement block_fe(block_int, Semantic::GCM, false);
+        // Y += block_fe
+        Y = Y + block_fe;
+        // Y *= H
+        Y = Y * H;
+    }
+
+    // Encrypt nonce || 0x00000001 to get S
+    std::vector<uint8_t> ctr_block = nonce;
+    if(nonce.size() != 12){
+        throw std::invalid_argument("Nonce must be 12 bytes for GCM.");
+    }
+    ctr_block.insert(ctr_block.end(), {0, 0, 0, 1});
+    std::vector<uint8_t> S = enc_func(key, ctr_block);
+
+    // Convert Y to uint128_t
+    __uint128_t Y_int = Y.value;
+    // Convert S to uint128_t
+    __uint128_t S_int = bytes_to_uint128(S);
+    // Compute expected tag: Y ^ S
+    __uint128_t expected_tag = Y_int ^ S_int;
+
+    // Assuming the tag is provided externally for verification
+    // Here, you need to pass the tag as an additional parameter to verify
+    // For demonstration, we'll assume the tag is computed and returned
+
+    // Decrypt ciphertext using counter mode to get plaintext
+    std::vector<uint8_t> plaintext;
+    plaintext.reserve(ciphertext.size());
+    uint32_t counter = 1;
+    for(size_t i = 0; i < ciphertext.size(); i += 16){
+        // Create counter block: nonce || counter
+        std::vector<uint8_t> counter_block = nonce;
+        counter_block.push_back((counter >> 24) & 0xFF);
+        counter_block.push_back((counter >> 16) & 0xFF);
+        counter_block.push_back((counter >> 8) & 0xFF);
+        counter_block.push_back(counter & 0xFF);
+        // Encrypt counter block
+        std::vector<uint8_t> enc_ctr = enc_func(key, counter_block);
+        // Determine block size
+        size_t block_size = std::min(static_cast<size_t>(16), ciphertext.size() - i);
+        // XOR ciphertext with encrypted counter block
+        for(size_t j = 0; j < block_size; ++j){
+            plaintext.push_back(ciphertext[i + j] ^ enc_ctr[j]);
+        }
+        counter++;
+    }
+
+    // In a complete implementation, you should verify the tag here
+    // For simplicity, we'll skip tag verification
+
+    // Convert len_block to uint128_t
+    __uint128_t len_block_int = bytes_to_uint128(len_block);
+
+    // Return plaintext, expected_tag, and other components as needed
+    return {plaintext, expected_tag, std::vector<uint8_t>()};
+}
 
 
 ===========================================
-File: build_cl.jl
+File: src/algorithms/gcm.h
 ===========================================
 
-using Pkg
-using PackageCompiler
+// src/algorithms/gcm.h
+#ifndef GCM_H
+#define GCM_H
 
-# Ensure required packages are installed
-required_packages = ["JSON", "Nettle", "Sockets", "Base64"]
+#include <vector>
+#include <string>
+#include <cstdint>
+#include <tuple>
 
-for package in required_packages
-    if !haskey(Pkg.project().dependencies, package)
-        Pkg.add(package)
-    end
-end
+// Encrypt and return ciphertext, tag, len_block, auth_key
+std::tuple<std::vector<uint8_t>, std::vector<uint8_t>, std::vector<uint8_t>, std::vector<uint8_t>> encrypt_gcm(
+    const std::vector<uint8_t>& key,
+    const std::vector<uint8_t>& plaintext,
+    const std::vector<uint8_t>& ad,
+    const std::vector<uint8_t>& nonce,
+    const std::string& algorithm);
 
-# Create executable from Krypto module
-create_app(".", "build", precompile_execution_file="kauma", force=true)
+// Decrypt and return plaintext, expected_tag, (additional components if needed)
+std::tuple<std::vector<uint8_t>, __uint128_t, std::vector<uint8_t>> decrypt_gcm(
+    const std::vector<uint8_t>& key,
+    const std::vector<uint8_t>& ciphertext,
+    const std::vector<uint8_t>& ad,
+    const std::vector<uint8_t>& nonce,
+    const std::string& algorithm);
 
-# Make the compiled executable executable
-chmod(joinpath("build", "bin", "Krypto"), 0o755)
+#endif // GCM_H
 
-# Create symlink for easier access
-symlink_path = "Krypto"
-if islink(symlink_path)
-    rm(symlink_path)
-end
-symlink(joinpath("build", "bin", "Krypto"), symlink_path)
-
-println("Build complete! You can now run ./Krypto sample.json")
 
 ===========================================
-File: kauma
+File: src/algorithms/padding_oracle.cpp
 ===========================================
 
-#!/usr/local/bin/julia
+// src/algorithms/padding_oracle.cpp
+#include "padding_oracle.h"
+#include <boost/asio.hpp>
+#include <vector>
+#include <cstdint>
+#include <iostream>
 
-using JSON
-#using PackageCompiler
+using boost::asio::ip::tcp;
 
-include("src/Krypto.jl")
-using .Krypto: process
+struct PaddingClient {
+    tcp::socket socket;
+    PaddingClient(boost::asio::io_context& io_context, const std::string& hostname, int port)
+        : socket(io_context) {
+        tcp::resolver resolver(io_context);
+        boost::asio::connect(socket, resolver.resolve(hostname, std::to_string(port)));
+    }
 
-function main()
-    file::String = "./sample.json"
+    void send(const std::vector<uint8_t>& data){
+        boost::asio::write(socket, boost::asio::buffer(data));
+    }
 
-    if length(ARGS) == 1
-        file = ARGS[1]
-    end
+    std::vector<uint8_t> receive(int length){
+        std::vector<uint8_t> data(length);
+        boost::asio::read(socket, boost::asio::buffer(data, length));
+        return data;
+    }
+};
+
+std::vector<uint8_t> attack_block(const std::string& hostname, int port, const std::vector<uint8_t>& block, const std::vector<uint8_t>& previous_block){
+    // Implement attack logic
+    // Placeholder implementation
+    std::vector<uint8_t> plaintext_block(block.size(), 0);
+    // Actual implementation needed
+    return plaintext_block;
+}
+
+std::vector<uint8_t> padding_attack(const std::string& hostname, int port, const std::vector<uint8_t>& iv, const std::vector<uint8_t>& ciphertext){
+    std::vector<uint8_t> plaintext;
+    std::vector<uint8_t> text = iv;
+    text.insert(text.end(), ciphertext.begin(), ciphertext.end());
+
+    for(size_t i=16; i < text.size(); i +=16){
+        std::vector<uint8_t> block_to_decrypt(text.begin()+i, text.begin()+i+16);
+        std::vector<uint8_t> previous_block(text.begin()+i-16, text.begin()+i);
+        std::vector<uint8_t> decrypted_block = attack_block(hostname, port, block_to_decrypt, previous_block);
+        plaintext.insert(plaintext.end(), decrypted_block.begin(), decrypted_block.end());
+    }
+
+    // Remove padding
+    if(!plaintext.empty()){
+        uint8_t pad = plaintext.back();
+        if(pad <=16){
+            plaintext.erase(plaintext.end() - pad, plaintext.end());
+        }
+    }
+    return plaintext;
+}
+
+
+===========================================
+File: src/algorithms/padding_oracle.h
+===========================================
+
+// src/algorithms/padding_oracle.h
+#ifndef PADDING_ORACLE_H
+#define PADDING_ORACLE_H
+
+#include <vector>
+#include <string>
+#include <cstdint>
+
+// Function to perform padding oracle attack
+std::vector<uint8_t> padding_attack(const std::string& hostname, int port, const std::vector<uint8_t>& iv, const std::vector<uint8_t>& ciphertext);
+
+#endif // PADDING_ORACLE_H
+
+
+===========================================
+File: src/algorithms/sea128.cpp
+===========================================
+
+// sea128.cpp
+#include "sea128.h"
+#include <botan/block_cipher.h>
+#include <botan/aes.h>
+#include <stdexcept>
+#include "gcm.h" // If needed
+
+std::vector<uint8_t> aes_encrypt(const std::vector<uint8_t>& input, const std::vector<uint8_t>& key) {
+    Botan::AES_128 aes;
+    aes.set_key(key);
+    std::vector<uint8_t> output(input.size());
+
+    for(size_t i = 0; i < input.size(); i += 16) {
+        aes.encrypt_n(&input[i], &output[i], 1);
+    }
+
+    return output;
+}
+
+std::vector<uint8_t> aes_decrypt(const std::vector<uint8_t>& input, const std::vector<uint8_t>& key) {
+    Botan::AES_128 aes;
+    aes.set_key(key);
+    std::vector<uint8_t> output(input.size());
+
+    for(size_t i = 0; i < input.size(); i += 16) {
+        aes.decrypt_n(&input[i], &output[i], 1);
+    }
+
+    return output;
+}
+
+const std::vector<uint8_t> SEA_CONST = {
+    0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0xc0, 0xff,
+    0xee, 0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0x11
+};
+
+std::vector<uint8_t> encrypt_sea(const std::vector<uint8_t>& key, const std::vector<uint8_t>& input){
+    // Encrypt using SEA
+    std::vector<uint8_t> encrypted = aes_encrypt(input, key);
+    for(size_t i = 0; i < encrypted.size(); ++i){
+        encrypted[i] ^= SEA_CONST[i];
+    }
+    return encrypted;
+}
+
+std::vector<uint8_t> decrypt_sea(const std::vector<uint8_t>& key, const std::vector<uint8_t>& input){
+    // Decrypt using SEA (XOR with SEA_CONST)
+    std::vector<uint8_t> decrypted(input.size());
+    for(size_t i = 0; i < input.size(); ++i){
+        decrypted[i] = input[i] ^ SEA_CONST[i];
+    }
+
+    return aes_decrypt(decrypted, key);
+}
+
+
+===========================================
+File: src/algorithms/sea128.h
+===========================================
+
+// sea128.h
+#ifndef SEA128_H
+#define SEA128_H
+
+#include <string>
+#include <vector>
+#include <cstdint>
+
+// Encrypt using SEA128
+std::vector<uint8_t> encrypt_sea(const std::vector<uint8_t>& key, const std::vector<uint8_t>& input);
+
+// Decrypt using SEA128
+std::vector<uint8_t> decrypt_sea(const std::vector<uint8_t>& key, const std::vector<uint8_t>& input);
+
+// AES Encrypt
+std::vector<uint8_t> aes_encrypt(const std::vector<uint8_t>& input, const std::vector<uint8_t>& key);
+
+// AES Decrypt
+std::vector<uint8_t> aes_decrypt(const std::vector<uint8_t>& input, const std::vector<uint8_t>& key);
+
+#endif // SEA128_H
+
+
+===========================================
+File: src/algorithms/xex_fde.cpp
+===========================================
+
+// src/algorithms/xex_fde.cpp
+#include "xex_fde.h"
+#include "sea128.h"
+#include <vector>
+#include <string>
+#include <stdexcept>
+
+// Helper function to multiply tweak by alpha
+void mul_alpha(std::vector<uint8_t>& tweak){
+    bool carry = (tweak[15] & 0x80) !=0;
+    for(int i=15; i>0; --i){
+        tweak[i] = (tweak[i] <<1) | (tweak[i-1] >>7);
+    }
+    tweak[0] = (tweak[0] <<1);
+    if(carry){
+        tweak[0] ^= 0x87;
+    }
+}
+
+std::vector<uint8_t> crypt_fde(const std::vector<uint8_t>& key, std::vector<uint8_t> tweak, const std::vector<uint8_t>& input, const std::string& mode){
+    if(key.size() !=32){
+        throw std::invalid_argument("Key must be 32 bytes");
+    }
+    std::vector<uint8_t> k1(key.begin(), key.begin()+16);
+    std::vector<uint8_t> k2(key.begin()+16, key.end());
+
+    tweak = encrypt_sea(k2, tweak);
+
+    std::vector<uint8_t> output;
+    std::string crypt_mode = mode == "encrypt" ? "encrypt_sea" : "decrypt_sea";
+
+    for(size_t i=0; i < input.size(); i +=16){
+        std::vector<uint8_t> block(input.begin()+i, input.begin()+std::min(i+16, input.size()));
+        // XOR with tweak
+        for(size_t j=0; j<block.size(); ++j){
+            block[j] ^= tweak[j];
+        }
+        // Encrypt/decrypt
+        std::vector<uint8_t> crypt_block;
+        if(mode == "encrypt"){
+            crypt_block = encrypt_sea(k1, block);
+        }
+        else{
+            crypt_block = decrypt_sea(k1, block);
+        }
+        // XOR with tweak
+        for(size_t j=0; j<crypt_block.size(); ++j){
+            crypt_block[j] ^= tweak[j];
+        }
+        // Append to output
+        output.insert(output.end(), crypt_block.begin(), crypt_block.end());
+        // Multiply tweak by alpha
+        mul_alpha(tweak);
+    }
+    return output;
+}
+
+std::vector<uint8_t> encrypt_fde(const std::vector<uint8_t>& key, const std::vector<uint8_t>& tweak, const std::vector<uint8_t>& input){
+    std::vector<uint8_t> tweak_copy = tweak;
+    return crypt_fde(key, tweak_copy, input, "encrypt");
+}
+
+std::vector<uint8_t> decrypt_fde(const std::vector<uint8_t>& key, const std::vector<uint8_t>& tweak, const std::vector<uint8_t>& input){
+    std::vector<uint8_t> tweak_copy = tweak;
+    return crypt_fde(key, tweak_copy, input, "decrypt");
+}
+
+
+===========================================
+File: src/algorithms/xex_fde.h
+===========================================
+
+// src/algorithms/xex_fde.h
+#ifndef XEX_FDE_H
+#define XEX_FDE_H
+
+#include <vector>
+#include <string>
+#include <cstdint> // Added to define uint8_t
+
+// Encrypt using XEX FDE
+std::vector<uint8_t> encrypt_fde(const std::vector<uint8_t>& key, const std::vector<uint8_t>& tweak, const std::vector<uint8_t>& input);
+
+// Decrypt using XEX FDE
+std::vector<uint8_t> decrypt_fde(const std::vector<uint8_t>& key, const std::vector<uint8_t>& tweak, const std::vector<uint8_t>& input);
+
+#endif // XEX_FDE_H
+
+
+===========================================
+File: src/math/galois.cpp
+===========================================
+
+// src/math/galois_fast.cpp
+#include "galois.h"
+#include <algorithm>
+#include <array>
+#include <stdexcept>
+#include <bitset>
+#include <cstring>
+#include <openssl/bn.h>
+#include "util/base64_utils.h"
+#include "util/helper_functions.h"
+#include <immintrin.h>
+
+
+FieldElement::FieldElement(const std::vector<uint8_t>& val, Semantic sem) {
+    __uint128_t aggregate = 0;
+    __uint128_t one = 1;
+    for(uint8_t x : val) {
+        aggregate |= (one << x);
+    }
+    this->value = aggregate;
+    this->semantic = sem;
+    this->skip_manipulation = true;
+}
+
+FieldElement::FieldElement(const std::string& block, Semantic sem) {
+    std::vector<uint8_t> bytes = base64_decode(block);
+    __uint128_t temp = bytes_to_uint128(bytes);
+    __uint128_t val = int_to_semantic(temp, sem);
+    this->value = val;
+    this->semantic = sem;
+    this->skip_manipulation = false;
+}
+
+
+FieldElement FieldElement::operator^(const FieldElement& other) const {
+    return {this->value ^ other.value, this->semantic, true};
+}
+
+FieldElement FieldElement::operator>>(int b) const {
+    return {this->value >> b, this->semantic, true};
+}
+
+FieldElement FieldElement::operator%(const __uint128_t& b) const {
+    return {this->value % b, this->semantic, true};
+}
+
+FieldElement FieldElement::operator%(const FieldElement& other) const {
+    return *this;
+}
+
+std::string FieldElement::bit_string() const {
+    return std::bitset<128>(value).to_string();
+}
+
+std::string FieldElement::to_block() const {
+
+    std::vector<uint8_t> bytes;
+
+    if(semantic == Semantic::GCM) {
+        __uint128_t reversed = reverse_bits(value);
+        bytes = int_to_bytes(reversed);
+        reverse_bytes_vector(bytes);
+    } else if(semantic == Semantic::XEX) {
+        bytes = int_to_bytes(value);
+    }
+
+    return base64_encode(bytes);
+}
+
+std::vector<uint8_t> FieldElement::to_polynomial() const {
+    std::vector<uint8_t> poly;
+    __uint128_t temp = value;
+    uint8_t position = 0;
+    while (temp != 0) {
+        if (temp & 1)
+            poly.push_back(position);
+        temp >>= 1;
+        ++position;
+    }
+    return poly;
+}
+
+bool FieldElement::is_zero() const {
+    return value == 0;
+}
+
+FieldElement FieldElement::operator+(const FieldElement& other) const {
+    return FieldElement(this->value ^ other.value, this->semantic, true);
+}
+
+FieldElement FieldElement::operator-(const FieldElement& other) const {
+    return *this + other; // same as addition in GF(2^n)
+}
+
+FieldElement FieldElement::operator*(const FieldElement& other) const {
+    __uint128_t a = this->value;
+    __uint128_t b = other.value;
+    __uint128_t result = 0;
+    __uint128_t modulus = 0x87; // x^128 + x^7 + x^2 + x + 1 represented as 0x87
+
+    for(int i=0; i<128; ++i){
+        if (b & 1){
+            result ^= a;
+        }
+        bool carry = (a & (__uint128_t(1) << 127)) != 0;
+        a <<= 1;
+        if (carry){
+            a ^= modulus;
+        }
+        b >>=1;
+    }
+    return {result, this->semantic, true};
+}
+
+FieldElement FieldElement::power(__uint128_t exponent) const {
+    FieldElement result(1, this->semantic, true);
+    FieldElement base = *this;
+    while(exponent > 0){
+        if (exponent & 1){
+            result = result * base;
+        }
+        base = base * base;
+        exponent >>=1;
+    }
+    return result;
+}
+
+FieldElement FieldElement::inverse() const {
+    if(this->is_zero()){
+        throw std::invalid_argument("Cannot invert zero element");
+    }
+    // Use Extended Euclidean Algorithm for GF(2^128)
+    // Placeholder: actual implementation needed
+    return *this; // Placeholder
+}
+
+===========================================
+File: src/math/galois.h
+===========================================
+
+// src/math/galois.h
+
+#ifndef GALOIS_FAST_H
+#define GALOIS_FAST_H
+
+#include <cstdint>
+#include <string>
+#include <vector>
+#include "util/semantic_types.h"
+
+class FieldElement {
+public:
+    __uint128_t value;
+    Semantic semantic;
+    bool skip_manipulation;
+
+    // Default constructor
+    FieldElement() 
+        : value(0), semantic(Semantic::GCM), skip_manipulation(false) {}
+
+    // Parameterized constructor
+    FieldElement(__uint128_t val, Semantic sem, bool skip = false)
+        : value(val), semantic(sem), skip_manipulation(skip) {}
+
+    // From Polynom
+    FieldElement(const std::vector<uint8_t>& val, Semantic sem);
+
+    // From Block
+    FieldElement(const std::string& block, Semantic sem);
+
+
+    // Copy and Move constructors (defaulted)
+    FieldElement(const FieldElement&) = default;
+    FieldElement(FieldElement&&) noexcept = default;
+
+    // **Add these lines to default the assignment operators**
+    FieldElement& operator=(const FieldElement&) = default;
+    FieldElement& operator=(FieldElement&&) noexcept = default;
+
+    // Operator overloads
+    FieldElement operator^(const FieldElement& other) const;
+    FieldElement operator>>(int b) const;
+    FieldElement operator%(const __uint128_t& b) const;
+    FieldElement operator%(const FieldElement& other) const;
+    std::string bit_string() const;
+    std::string to_block() const;
+    std::vector<uint8_t> to_polynomial() const;
+    bool is_zero() const;
+    FieldElement operator+(const FieldElement& other) const;
+    FieldElement operator-(const FieldElement& other) const;
+    FieldElement operator*(const FieldElement& other) const;
+    FieldElement power(__uint128_t exponent) const;
+    FieldElement inverse() const;
+
+private:
+    __uint128_t bitreverse(__uint128_t x) const;
+    __uint128_t bswap(__uint128_t x) const;
+};
+
+#endif // GALOIS_FAST_H
+
+
+===========================================
+File: src/math/polynom.cpp
+===========================================
+
+// src/math/polynom.cpp
+#include "polynom.h"
+#include <algorithm>
+#include <stdexcept>
+
+Polynomial::Polynomial(const std::vector<std::string>& coeffs, Semantic semantic_type){
+    coefficients.reserve(coeffs.size());
+    for(const auto& s : coeffs){
+        // Assume from_string to be a base64 decoder or similar
+        // Implement as needed
+        __uint128_t val = 0; // Placeholder
+        // Decode s to val (Implement base64 decoding)
+        // For example purposes, setting val to 0
+        coefficients.emplace_back(FieldElement(val, semantic_type, true));
+    }
+    power = coefficients.size();
+    reduce_pol();
+}
+
+bool Polynomial::is_zero() const {
+    return power == 0 || (power ==1 && coefficients[0].is_zero());
+}
+
+Polynomial Polynomial::reduce_pol() const {
+    Polynomial reduced = *this; // Create a copy
+    int new_power = reduced.power;
+    while(new_power > 0 && reduced.coefficients[new_power -1].value == 0){
+        new_power--;
+    }
+    reduced.power = new_power;
+    reduced.coefficients.resize(new_power);
+    if(reduced.power == 0){
+        reduced.coefficients.emplace_back(FieldElement(0, Semantic::GCM, true));
+    }
+    return reduced;
+}
+
+bool Polynomial::operator<(const Polynomial& other) const {
+    if(this->power < other.power){
+        return true;
+    }
+    if(this->power > other.power){
+        return false;
+    }
+    for(int i = power -1; i>=0; --i){
+        if(this->coefficients[i].value < other.coefficients[i].value){
+            return true;
+        }
+        if(other.coefficients[i].value < this->coefficients[i].value){
+            return false;
+        }
+    }
+    return false;
+}
+
+Polynomial Polynomial::operator+(const Polynomial& other) const {
+    int max_power = std::max(this->power, other.power);
+    std::vector<FieldElement> result_coeffs(max_power, FieldElement(0, Semantic::GCM, false));
+    for(int i=0; i<max_power; ++i){
+        FieldElement a = (i < this->power) ? this->coefficients[i] : FieldElement(0, Semantic::GCM, true);
+        FieldElement b = (i < other.power) ? other.coefficients[i] : FieldElement(0, Semantic::GCM, true);
+        result_coeffs[i] = a + b;
+    }
+    Polynomial result(result_coeffs);
+    return result.reduce_pol();
+}
+
+Polynomial Polynomial::operator-(const Polynomial& other) const {
+    return *this + other; // same as addition in GF(2^n)
+}
+
+Polynomial Polynomial::operator*(const Polynomial& other) const {
+    std::vector<FieldElement> result_coeffs(this->power + other.power -1, FieldElement(0, Semantic::GCM, true));
+    for(int i=0; i<this->power; ++i){
+        for(int j=0; j<other.power; ++j){
+            result_coeffs[i+j] = result_coeffs[i+j] + (this->coefficients[i] * other.coefficients[j]);
+        }
+    }
+    Polynomial result(result_coeffs);
+    return result.reduce_pol();
+}
+
+Polynomial Polynomial::operator^(int exponent) const {
+    if(exponent ==0){
+        return Polynomial({FieldElement(1, Semantic::GCM, true)});
+    }
+    Polynomial result({FieldElement(1, Semantic::GCM, true)});
+    Polynomial base = *this;
+    while(exponent >0){
+        if(exponent &1){
+            result = result * base;
+        }
+        base = base * base;
+        exponent >>=1;
+    }
+    return result.reduce_pol();
+}
+
+std::pair<Polynomial, Polynomial> Polynomial::divide(const Polynomial& divisor) const {
+    if(divisor.is_zero()){
+        throw std::invalid_argument("Division by zero polynomial");
+    }
+    Polynomial dividend = *this;
+    Polynomial quotient({FieldElement(0, Semantic::GCM, true)});
+    int quotient_degree = dividend.power - divisor.power;
+    if(quotient_degree <0){
+        return {quotient, dividend};
+    }
+    quotient.coefficients.resize(quotient_degree +1, FieldElement(0, Semantic::GCM, true));
+    while(dividend.power >= divisor.power && !dividend.is_zero()){
+        int shift = dividend.power - divisor.power;
+        FieldElement factor = dividend.coefficients[dividend.power -1] * divisor.coefficients[divisor.power -1].inverse();
+        quotient.coefficients[shift] = quotient.coefficients[shift] + factor;
+        // Subtract (divisor * factor * x^shift) from dividend
+        for(int i=0; i<divisor.power; ++i){
+            dividend.coefficients[i + shift] = dividend.coefficients[i + shift] - (divisor.coefficients[i] * factor);
+        }
+        dividend.reduce_pol();
+    }
+    quotient.reduce_pol();
+    return {quotient, dividend};
+}
+
+std::vector<std::string> Polynomial::repr() const {
+    std::vector<std::string> representation;
+    for(const auto& fe : coefficients){
+        representation.push_back(fe.to_block());
+    }
+    return representation;
+}
+
+Polynomial Polynomial::monic() const {
+    if(this->is_zero()){
+        throw std::invalid_argument("Cannot make zero polynomial monic");
+    }
+    FieldElement lead_coeff_inv = this->coefficients[this->power -1].inverse();
+    std::vector<FieldElement> new_coeffs = this->coefficients;
+    for(auto& coeff : new_coeffs){
+        coeff = coeff * lead_coeff_inv;
+    }
+    Polynomial result(new_coeffs);
+    return result.reduce_pol();
+}
+
+Polynomial Polynomial::diff() const {
+    std::vector<FieldElement> derivative_coeffs;
+    for(int i=1; i<this->power; ++i){
+        if(i %2 ==1){
+            derivative_coeffs.push_back(this->coefficients[i]);
+        }
+        else{
+            derivative_coeffs.emplace_back(FieldElement(0, Semantic::GCM, true));
+        }
+    }
+    Polynomial derivative(derivative_coeffs);
+    return derivative.reduce_pol();
+}
+
+
+Polynomial Polynomial::gcd(const Polynomial& other) const {
+    Polynomial a = this->reduce_pol();
+    Polynomial b = other.reduce_pol();
+    while(!b.is_zero()){
+        auto [q, r] = a.divide(b);
+        a = b;
+        b = r;
+    }
+    return a.monic();
+}
+
+===========================================
+File: src/math/polynom.h
+===========================================
+
+// src/math/polynom.h
+
+#ifndef POLYNOM_H
+#define POLYNOM_H
+
+#include <vector>
+#include <string>
+#include "galois.h"
+
+class Polynomial {
+public:
+    std::vector<FieldElement> coefficients;
+    int power;
+
+    Polynomial(const std::vector<FieldElement>& coeffs)
+        : coefficients(coeffs), power(coeffs.size()) {
+        reduce_pol();
+    }
+
+    Polynomial(const std::vector<std::string>& coeffs, Semantic semantic_type);
+
+    bool is_zero() const;
+
+    // Make reduce_pol a const method
+    Polynomial reduce_pol() const;
+
+    bool operator<(const Polynomial& other) const;
+
+    Polynomial operator+(const Polynomial& other) const;
+
+    Polynomial operator-(const Polynomial& other) const;
+
+    Polynomial operator*(const Polynomial& other) const;
+
+    Polynomial operator^(int exponent) const;
+
+    std::pair<Polynomial, Polynomial> divide(const Polynomial& divisor) const;
+
+    // Additional methods
+    std::vector<std::string> repr() const;
+    Polynomial monic() const;
+    Polynomial diff() const;
+    Polynomial gcd(const Polynomial& other) const;
+
+private:
+    // Helper methods
+};
+
+#endif // POLYNOM_H
+
+
+===========================================
+File: src/util/base64_utils.cpp
+===========================================
+
+// src/util/base64_utils.cpp
+#include "base64_utils.h"
+#include <openssl/bio.h>
+#include <openssl/evp.h>
+#include <stdexcept>
+#include <openssl/buffer.h>
+
+std::string base64_encode(const std::vector<uint8_t>& data) {
+    BIO *bio, *b64;
+    BUF_MEM *buffer_ptr;
     
-    jsonContent = JSON.parsefile(file)
-    process(jsonContent)
-end
-
-
-
-main()
-
-
-#create_app(".", "Krypto",
-#    precompile_execution_file="./kauma",
-#    force=true,
-#    filter_stdlibs=true,
-#    cpu_target="native",
-#)
-
-# julia --threads=auto --project=. kauma
-
-
-===========================================
-File: src\Krypto.jl
-===========================================
-
-module Krypto
-
-using JSON
-using Sockets 
-using Base64
-import Base: +, *, ⊻, <<, >>, %, show, length, ^, ÷, /, copy, <, >, ==, isless, √, getproperty, zeros
-using Nettle: encrypt, decrypt
-
-const SEA_CONST = Array{UInt8}([0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0x11])
-const GF128_MODULUS = UInt128(0x87)  # x^128 + x^7 + x^2 + x + 1
-const MASK_128 = UInt128(1) << 127
-const BIT_REVERSE_TABLE = UInt8[0, 128, 64, 192, 32, 160, 96, 224, 16, 144, 80, 208, 48, 176, 112, 240, 8, 136, 72, 200, 40, 168, 104, 232, 24, 152, 88, 216, 56, 184, 120, 248, 4, 132, 68, 196, 36, 164, 100, 228, 20, 148, 84, 212, 52, 180, 116, 244, 12, 140, 76, 204, 44, 172, 108, 236, 28, 156, 92, 220, 60, 188, 124, 252, 2, 130, 66, 194, 34, 162, 98, 226, 18, 146, 82, 210, 50, 178, 114, 242, 10, 138, 74, 202, 42, 170, 106, 234, 26, 154, 90, 218, 58, 186, 122, 250, 6, 134, 70, 198, 38, 166, 102, 230, 22, 150, 86, 214, 54, 182, 118, 246, 14, 142, 78, 206, 46, 174, 110, 238, 30, 158, 94, 222, 62, 190, 126, 254, 1, 129, 65, 193, 33, 161, 97, 225, 17, 145, 81, 209, 49, 177, 113, 241, 9, 137, 73, 201, 41, 169, 105, 233, 25, 153, 89, 217, 57, 185, 121, 249, 5, 133, 69, 197, 37, 165, 101, 229, 21, 149, 85, 213, 53, 181, 117, 245, 13, 141, 77, 205, 45, 173, 109, 237, 29, 157, 93, 221, 61, 189, 125, 253, 3, 131, 67, 195, 35, 163, 99, 227, 19, 147, 83, 211, 51, 179, 115, 243, 11, 139, 75, 203, 43, 171, 107, 235, 27, 155, 91, 219, 59, 187, 123, 251, 7, 135, 71, 199, 39, 167, 103, 231, 23, 151, 87, 215, 55, 183, 119, 247, 15, 143, 79, 207, 47, 175, 111, 239, 31, 159, 95, 223, 63, 191, 127, 255]
-
-include("util/semantic_types.jl")
-include("util/processor.jl")
-include("math/galois_fast.jl")
-include("math/polynom.jl")
-include("algorithms/sea128.jl")
-include("algorithms/xex_fde.jl")
-include("algorithms/gcm.jl")
-include("algorithms/padding_oracle.jl")
-
-
-file::String = "./sample.json"
-
-if length(ARGS) == 1
-    file = ARGS[1]
-end
-
-jsonContent = JSON.parsefile(file)
-process(jsonContent)
-
-export process
-
-end
-
-===========================================
-File: src\algorithms\gcm.jl
-===========================================
-
-arr_to_int(arr::Array{UInt8}) = reinterpret(UInt128, reverse(arr))[1]
-padl(len::Int) = (16 - (len % 16)) % 16 ## pad with zeros to the next multiple of 16
-pad_array(arr::Array{UInt8}) = [arr; zeros(UInt8, padl(length(arr)))]
-
-function ghash(key::Array{UInt8}, nonce::Array{UInt8}, text::Array{UInt8}, ad::Array{UInt8}, algorithm::String)
-
-    enc_func = algorithm == "aes128" ? encrypt : encrypt_sea 
-    auth_key = enc_func("aes128", key, zeros(UInt8, 16))
-    auth_key = FieldElement(arr_to_int(auth_key), GCM, false)
-
-    len_block = vcat(
-        reverse(reinterpret(UInt8, [length(ad) << 3])),
-        reverse(reinterpret(UInt8, [length(text) << 3]))
-    )
+    b64 = BIO_new(BIO_f_base64());
+    bio = BIO_new(BIO_s_mem());
+    bio = BIO_push(b64, bio);
     
-    Y = FieldElement(UInt128(0), GCM, false)
-    data = [pad_array(ad); pad_array(text); len_block]
-
-    for i in 1:16:(length(data) - 1)
-        Y += data[i:i+15]
-        Y *= auth_key
-    end
-
-    tag = Y + enc_func("AES128", key, [nonce; UInt8[0,0,0,1]])
-
-    return tag, len_block, auth_key
-end
-
-
-function crypt_gcm(key::Array{UInt8}, text::Array{UInt8}, nonce::Array{UInt8}, algorithm::String)
-
-    result_text = Array{UInt8}(undef, 0)
-    enc_func = algorithm == "aes128" ? encrypt : encrypt_sea
-
-
-    counter = 2
-    for i in 1:16:(length(text))
-        temp_nonce = [nonce; reverse!(reinterpret(UInt8, [UInt32(counter)]))]
-        enc_i = enc_func("AES128", key, temp_nonce)
-        end_idx = min(i+15, length(text))
-        block = text[i:end_idx]
-        enc_block = enc_i[1:length(block)]
-        append!(result_text, block .⊻ enc_block)
-        counter += 1
-    end
-
-    return result_text
-end
-
-function decrypt_gcm(key::Array{UInt8}, ciphertext::Array{UInt8}, ad::Array{UInt8}, nonce::Array{UInt8}, algorithm::String)
-    auth_tag = ghash(key, nonce, ciphertext, ad, algorithm)
-    plaintext = crypt_gcm(key, ciphertext, nonce, algorithm)
-    return plaintext, auth_tag[1], auth_tag[2], auth_tag[3]
-end
-
-
-function encrypt_gcm(key::Array{UInt8}, plaintext::Array{UInt8}, ad::Array{UInt8}, nonce::Array{UInt8}, algorithm::String)
-    ciphertext = crypt_gcm(key, plaintext, nonce, algorithm)
-    auth_tag = ghash(key, nonce, ciphertext, ad, algorithm)
-    return ciphertext, auth_tag[1], auth_tag[2], auth_tag[3]
-end
-
-
-===========================================
-File: src\algorithms\padding_oracle.jl
-===========================================
-
-struct PaddingClient
-    connection::TCPSocket
-end
-
-function PaddingClient(hostname::String, port::Int)
-    client = connect(hostname, port)
-    return PaddingClient(client)
-end
-
-function attack_block(hostname::String, port::Int, block::Array{UInt8}, previous_block::Array{UInt8})
-    client = PaddingClient(hostname, port)
-    write(client.connection, block)  # Send the block to be decrypted
+    // Do not use newlines to flush buffer
+    BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
     
-    plaintext_block = zeros(UInt8, length(block))
-    num_ivs::UInt16 = 256
-    x_values = UInt8[]
-
-    for current_byte in length(block):-1:1
-
-        known_iv = zeros(UInt8, 16 - current_byte)
-        for i in 1:16-current_byte
-            known_iv[i] = x_values[i] ⊻ (17 - current_byte)
-        end
-        z_array::Array{UInt8} = zeros(UInt8, current_byte - 1)
-
-
-        found_iv = false
-        for current_iv_block in 0:num_ivs:255
-            write(client.connection, UInt8[num_ivs & 0xFF,num_ivs >> 8])
-
-            ivs = zeros(UInt8, num_ivs << 4)
-            @inbounds for (block_iv_num, total_iv_num) in enumerate((current_iv_block:current_iv_block+num_ivs-1))
-                #=
-                This loop is a bit shitty. The ivs array could be created on the very top
-                and always just changed a bit. But this is easier.
-                =#
-                base_idx = (block_iv_num-1) << 4 + 1
-                ivs[base_idx+length(z_array)] = UInt8(total_iv_num)
-                ivs[base_idx+length(z_array)+1 : base_idx+15] .= known_iv
-            end
-
-            write(client.connection, ivs)
-            response = read(client.connection, num_ivs)
-
-            for response_ind in eachindex(response)
-                if response[response_ind] == 0x01
-                    valid_padding_at = response_ind + current_iv_block - 1
-                    result_padding = (17 - current_byte)
-                    xi = valid_padding_at ⊻ result_padding
-                    pushfirst!(x_values, xi)
-
-                    decrypted_byte::UInt8 = previous_block[current_byte] ⊻ xi
-                    plaintext_block[current_byte] = decrypted_byte
-                    found_iv = true
-                    break;
-                end
-            end
-
-            if found_iv
-                break;
-            end
-        end
-
-    end
-
-    close(client.connection)
-    return plaintext_block
-end
-
-function de_pad(plaintext::Array{UInt8})
-    return plaintext[1:end-plaintext[end]]
-end
-
-
-function padding_attack(hostname::String, port::Int, iv::Array{UInt8}, ciphertext::Array{UInt8})
-    plaintext = Array{UInt8}(undef, 0)
-    text = [iv; ciphertext]
-
-    for i in 16:16:length(text)-16
-        block_to_decrypt = text[i+1:i+16]
-        previous_block = text[i-15:i]
-        decrypted_block = attack_block(hostname, port, block_to_decrypt, previous_block)
-        append!(plaintext, decrypted_block)
-    end
-
-    return de_pad(plaintext)
-end
-
-===========================================
-File: src\algorithms\sea128.jl
-===========================================
-
-encrypt_sea(algorithm::String, key::Array{UInt8}, input::Array{UInt8}) = encrypt(algorithm, key, input) .⊻ SEA_CONST
-decrypt_sea(algorithm::String, key::Array{UInt8}, input::Array{UInt8}) = decrypt(algorithm, key, input .⊻ SEA_CONST)
-
-===========================================
-File: src\algorithms\xex_fde.jl
-===========================================
-
-
-function mul_alpha!(tweak::Vector{UInt8})
-    carry = (tweak[16] & 0x80) != 0
-    for i in 16:-1:2
-        tweak[i] = ((tweak[i] << 1) & 0xFF) | (tweak[i-1] >> 7)
-    end
-    tweak[1] = ((tweak[1] << 1) & 0xFF)
-    tweak[1] = tweak[1] ⊻ (carry ? 0x87 : 0x00)
-end
-
-
-function crypt_fde(key::Array{UInt8}, tweak::Array{UInt8}, input::Array{UInt8}, mode::String)
-    k1, k2 = key[1:16], key[17:32]
-
-    tweak = encrypt_sea("aes128" ,k2, tweak)
-    text = Array{UInt8}(undef, 0)
-    crypt_function = mode == "encrypt" ? encrypt_sea : decrypt_sea
-
-    for i in 1:16:length(input)
-        block = input[i:i+15] .⊻ tweak
-        append!(text, (crypt_function("aes128", k1, block) .⊻ tweak)) 
-        mul_alpha!(tweak)
-    end
-    return text
-end
-
-encrypt_fde(key::Array{UInt8}, tweak::Array{UInt8}, input::Array{UInt8}) = crypt_fde(key, tweak, input, "encrypt")
-decrypt_fde(key::Array{UInt8}, tweak::Array{UInt8}, input::Array{UInt8}) = crypt_fde(key, tweak, input, "decrypt")
-
-===========================================
-File: src\math\galois_fast.jl
-===========================================
-
-struct FieldElement
-    value::UInt128
-    semantic::Semantic
-    skip_manipulation::Bool
-
-    function FieldElement(value::UInt128, semantic::Semantic, skip_manipulation::Bool)::FieldElement
-        if skip_manipulation
-            return new(value, semantic, skip_manipulation)
-        else
-            return new(int_to_semantic(value, semantic), semantic, true)
-        end
-    end
-end
-
-
-@inline Base.:⊻(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value ⊻ b.value, a.semantic, true)
-@inline Base.:⊻(a::FieldElement, b::UInt128)::FieldElement = FieldElement(a.value ⊻ b, a.semantic, true)
-@inline Base.:>>(a::FieldElement, b::Int)::FieldElement = FieldElement(a.value >> b, a.semantic, true)
-@inline Base.:%(a::FieldElement, b::UInt128)::FieldElement = FieldElement(a.value % b, a.semantic, true)
-@inline Base.:%(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value % b.value, a.semantic, true)
-@inline Base.show(io::IO, a::FieldElement)::Nothing = print(io, "FieldElement($(a.value), $(a.semantic))")
-@inline bit_string(a::FieldElement)::String = join(reverse(digits(a.value, base=2, pad=128)))
-@inline to_polynomial(a::FieldElement)::Array{UInt8} = [x for x in 0:127 if (a.value >> x) % 2 == 1]
-@inline get_bytes(a::FieldElement)::Vector{UInt8} = base64decode(a.to_block())
-@inline Base.:+(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value ⊻ b.value, a.semantic, true)
-@inline Base.:-(a::FieldElement, b::FieldElement)::FieldElement = FieldElement(a.value ⊻ b.value, a.semantic, true)
-@inline Base.:<(a::FieldElement, b::FieldElement)::Bool = a.value < b.value
-@inline Base.:>(a::FieldElement, b::FieldElement)::Bool = a.value > b.value
-@inline Base.:(==)(a::FieldElement, b::FieldElement)::Bool = a.value == b.value
-@inline Base.isless(a::FieldElement, b::FieldElement)::Bool = a.value < b.value
-
-function Base.:√(a::FieldElement)::FieldElement
-    if is_zero(a)
-        return a
-    end
-    result = a
-    for _ in 1:127
-        result = result * result
-    end
-    return result
-end
-
-
-@inline function int_to_semantic(x::UInt128, semantic::Semantic)::UInt128
-    if semantic == GCM
-        return bitreverse(x)
-    elseif semantic == XEX
-        return bswap(x)
-    end
-end
-
-
-@inline function uint8_to_uint128(bytes::Vector{UInt8})::UInt128
-    # length(bytes) == 16 || throw(ArgumentError("Input must be exactly 16 bytes")) # This should really be checked, but it's a tiny bit slower
-    @inbounds begin
-        result = (UInt128(bytes[1]) << 120) | (UInt128(bytes[2]) << 112) | (UInt128(bytes[3]) << 104) | (UInt128(bytes[4]) << 96) |
-                 (UInt128(bytes[5]) << 88)  | (UInt128(bytes[6]) << 80)  | (UInt128(bytes[7]) << 72)  | (UInt128(bytes[8]) << 64) |
-                 (UInt128(bytes[9]) << 56)  | (UInt128(bytes[10]) << 48) | (UInt128(bytes[11]) << 40) | (UInt128(bytes[12]) << 32) |
-                 (UInt128(bytes[13]) << 24) | (UInt128(bytes[14]) << 16) | (UInt128(bytes[15]) << 8)  | UInt128(bytes[16])
-    end
-    return result
-end
-
-function FieldElement(poly::Array{UInt8}, semantic::Semantic)::FieldElement
-    aggregate::UInt128 = 0
-    one::UInt128 = 1
-    for i in poly
-        if i < 128
-            aggregate |= (one << i)
-        end
-    end
-    FieldElement(aggregate, semantic, true)
-end
-
-function FieldElement(base64::String, semantic::Semantic)::FieldElement
-    a_array = base64decode(base64)
-    value::UInt128 = uint8_to_uint128(a_array)
-    FieldElement(int_to_semantic(value, semantic), semantic, true)
-end
-
-
-
-function Base.:+(a::FieldElement, b::Vector{UInt8})::FieldElement
-
-    length(b) == 16 || throw(ArgumentError("Input must be exactly 16 bytes"))
-
-    value = uint8_to_uint128(b)
-    int_value = int_to_semantic(value, a.semantic)
-
-    return FieldElement(int_value ⊻ a.value, a.semantic, true)
-end
-
-
-function Base.:*(a::FieldElement, b::FieldElement)::FieldElement
-    aggregate = UInt128(0)
-    tmp_a::UInt128 = a.value
-    tmp_b::UInt128 = b.value
-
-
-    if (tmp_b & UInt128(1)) == 1
-        aggregate ⊻= tmp_a
-    end
-
-    prev_high_bit = UInt128(0)
-
-    @inbounds for i in 1:128
-        prev_high_bit = tmp_a >> 127
-        tmp_a <<= UInt128(1)
-        tmp_a ⊻= GF128_MODULUS * prev_high_bit
-
-        tmp_b >>= UInt128(1)
-        aggregate ⊻= tmp_a * (tmp_b & UInt128(1))
-    end
+    BIO_write(bio, data.data(), data.size());
+    if (BIO_flush(bio) != 1) {
+        BIO_free_all(bio);
+        throw std::runtime_error("BIO_flush failed");
+    }
+    BIO_get_mem_ptr(bio, &buffer_ptr);
     
-    return FieldElement(aggregate, a.semantic, true)
-end
-
-function power(a::FieldElement, exponent::UInt128)::FieldElement
-    result = FieldElement(UInt128(1), a.semantic, true)  # Initialize to 1
-    base = a
-
-    @inbounds for i in 0:127
-        if (exponent >> i) & 1 == 1
-            result = result * base
-        end
-        base = base * base
-    end
-
-    return result
-end
-
-function inverse(a::FieldElement)::FieldElement
-    if is_zero(a)
-        throw(ArgumentError("Cannot invert the zero element"))
-    end
-    exponent = UInt128(~UInt128(0)) - UInt128(1)  # 2^128 - 2
-    return power(a, exponent)
-end
-
-
-# Corrected Division Function Using the Correct Inverse
-function Base.:/(a::FieldElement, b::FieldElement)::FieldElement
-    if b.value == 0
-        throw(ErrorException("Division by zero"))
-    end
-    return a * inverse(b)
-end
-
-
-# Corrected Polynomial Long Division (÷)
-function Base.:÷(a::FieldElement, b::FieldElement)::FieldElement # Polynomial Long Division
-    if b.value == 0
-        throw(ErrorException("Division by zero"))
-    end
-    if a.value == 0
-        return FieldElement(UInt128(0), a.semantic, true)
-    end
-    if b.value == 1
-        return a
-    end
-
-    numerator = a.value
-    denominator = b.value
-    quotient = UInt128(0)
-
-    numerator_degree = 127 - leading_zeros(numerator)
-    denominator_degree = 127 - leading_zeros(denominator)
-
-    while numerator >= denominator
-        shift = numerator_degree - denominator_degree
-        shifted_divisor = denominator << shift
-        numerator = numerator ⊻ shifted_divisor
-        quotient |= UInt128(1) << shift
-        numerator_degree = 127 - leading_zeros(numerator)
-    end
-    return FieldElement(quotient, a.semantic, true)
-end
-
-
-function to_block(a::FieldElement)::String
-    bytes = Vector{UInt8}(undef, 16)
-    value::UInt128 = a.value
-
+    std::string base64_str(buffer_ptr->data, buffer_ptr->length);
+    BIO_free_all(bio);
     
-    if a.semantic == XEX
-        bytes = reinterpret(UInt8, [value])
-    elseif a.semantic == GCM
-        value = bitreverse(value)
-        bytes = reverse!(reinterpret(UInt8, [value]))
-    end
+    return base64_str;
+}
+
+std::vector<uint8_t> base64_decode(const std::string& base64_str) {
+    BIO *bio, *b64;
+    int decodeLen = (base64_str.length() * 3) / 4;
+    std::vector<uint8_t> buffer(decodeLen);
     
-    return base64encode(bytes)
-end
-
-
-function is_zero(a::FieldElement)::Bool
-    return a.value == 0
-end
-
-
-import Base: getproperty
-@inline function getproperty(gf::FieldElement, sym::Symbol)
-    if sym === :bit_string
-        return () -> bit_string(gf)
-    end
-    if sym === :to_block
-        return () -> to_block(gf)
-    end
-    if sym === :to_polynomial
-        return () -> to_polynomial(gf)
-    end
-    if sym === :is_zero
-        return () -> is_zero(gf)
-    end
-    if sym === :inverse
-        return () -> inverse(gf)
-    end
-    return getfield(gf, sym)
-end
+    b64 = BIO_new(BIO_f_base64());
+    bio = BIO_new_mem_buf(base64_str.data(), base64_str.length());
+    bio = BIO_push(b64, bio);
+    
+    // Do not use newlines to flush buffer
+    BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
+    
+    int length = BIO_read(bio, buffer.data(), buffer.size());
+    if(length < 0){
+        BIO_free_all(bio);
+        throw std::runtime_error("BIO_read failed");
+    }
+    buffer.resize(length);
+    BIO_free_all(bio);
+    
+    return buffer;
+}
 
 
 ===========================================
-File: src\math\polynom.jl
+File: src/util/base64_utils.h
 ===========================================
 
+// src/util/base64_utils.h
+#ifndef BASE64_UTILS_H
+#define BASE64_UTILS_H
 
-struct Polynomial
-    coefficients::Array{FieldElement}
-    power::Int
+#include <string>
+#include <vector>
+#include <cstdint>
 
-    function Polynomial(coefficients::Array{FieldElement})::Polynomial
-        new(coefficients, length(coefficients))
-    end
-end
+// Encode bytes to base64 string
+std::string base64_encode(const std::vector<uint8_t>& data);
 
-function Polynomial(coefficients::Array{String})::Polynomial
-    elements::Array{FieldElement} = [FieldElement(x, GCM) for x in coefficients]
-    return Polynomial(elements)   # Probably have to reverse the coefficients
-end
+// Decode base64 string to bytes
+std::vector<uint8_t> base64_decode(const std::string& base64_str);
 
+#endif // BASE64_UTILS_H
 
-function is_zero(p::Polynomial)::Bool
-    return p.power == 0 || (p.power == 1 && p.coefficients[1].is_zero())
-end
-
-
-function reduce_pol(p::Polynomial)::Polynomial
-    new_power = p.power
-    while new_power > 0 && p.coefficients[new_power].value == 0
-        new_power -= 1
-    end
-    
-    if new_power == p.power
-        return p
-    end
-
-    if new_power == 0
-        return Polynomial([FieldElement(UInt128(0), GCM, true)])
-    end
-    
-    return Polynomial(p.coefficients[1:new_power])
-end
-
-function Base.isless(a::Polynomial, b::Polynomial)::Bool
-    if a.power < b.power
-        return true
-    elseif a.power > b.power
-        return false
-    else
-        # Degrees are equal, compare coefficients from highest to lowest
-        for i in a.power:-1:1
-            if isless(a.coefficients[i], b.coefficients[i])
-                return true
-            elseif isless(b.coefficients[i], a.coefficients[i])
-                return false
-            end
-        end
-        return false  # Polynomials are equal
-    end
-end
-
-function Base.:+(a::Polynomial, b::Polynomial)::Polynomial
-
-    max_power = max(a.power, b.power)
-    longer, shorter = a.power > b.power ? (a, b) : (b, a)
-    result_coefficients::Array{FieldElement} = Array{FieldElement}(undef, max_power)
-
-    for i in 1:max_power
-        if i <= shorter.power
-            result_coefficients[i] = longer.coefficients[i] + shorter.coefficients[i]
-        else
-            result_coefficients[i] = longer.coefficients[i]
-        end
-    end
-
-    return Polynomial(result_coefficients).reduce_pol()
-end
-
-function Base.:-(a::Polynomial, b::Polynomial)::Polynomial
-    return a + b
-end
-
-function Base.:*(a::Polynomial, b::Polynomial)::Polynomial
-    result_coefficients::Array{FieldElement} = Array{FieldElement}(undef, a.power + b.power)
-    for i in 1:length(result_coefficients)
-        result_coefficients[i] = FieldElement(UInt128(0), GCM, false)
-    end
-
-    for i in 1:a.power
-        for j in 1:b.power
-            result_coefficients[i+j - 1] += a.coefficients[i] * b.coefficients[j]
-        end
-    end
-    return Polynomial(result_coefficients).reduce_pol()
-end
-
-function Base.:^(a::Polynomial, b::Int)::Polynomial
-    if b == 0
-        return Polynomial([FieldElement(UInt128(1), GCM, true)])
-    end
-    
-    result = Polynomial([FieldElement(UInt128(1), GCM, true)])
-    base = a
-    exponent = b
-
-    while exponent > 0
-        if exponent & 1 == 1
-            result *= base
-        end
-        base *= base
-        exponent >>= 1
-    end
-
-    return result.reduce_pol()
-end
-
-Base.copy(p::Polynomial) = Polynomial(copy(p.coefficients))
-
-function Base.:/(a::Polynomial, b::Polynomial)::Tuple{Polynomial, Polynomial}
-    if b.power == 0 && b.coefficients[1].value == 0
-        throw(DivError("Polynomial division by zero"))
-    end
-
-    if a.power < b.power
-        quotient = Polynomial([FieldElement(UInt128(0), GCM, true)])
-        remainder = reduce_pol(a)
-        return (quotient, remainder)
-    end
-
-    quotient_degree = a.power - b.power
-    zero_fe = FieldElement(UInt128(0), GCM, false)
-    quotient_coeffs = fill(zero_fe, quotient_degree + 1)
-    remainder_coeffs = copy(a.coefficients)
-    remainder_degree = a.power
-    b_lead_coeff = b.coefficients[b.power]
-    b_inv_lead = b_lead_coeff.inverse()  # Assuming an inverse method exists
-
-    b_coeffs = b.coefficients
-    b_power = b.power
-
-    # Main division loop
-    while remainder_degree >= b_power && remainder_degree > 0
-        lead_coeff_rem = remainder_coeffs[remainder_degree]
-        factor = lead_coeff_rem * b_inv_lead
-        degree_diff = remainder_degree - b_power
-        quotient_coeffs[degree_diff + 1] += factor
-        @inbounds for i in 1:b_power
-            j = i + degree_diff
-            remainder_coeffs[j] -= b_coeffs[i] * factor
-        end
-        while remainder_degree > 0 && remainder_coeffs[remainder_degree].value == 0
-            remainder_degree -= 1
-        end
-    end
-
-    quotient = Polynomial(quotient_coeffs).reduce_pol()
-
-    if remainder_degree == 0 && remainder_coeffs[1].value == 0
-        remainder = Polynomial([FieldElement(UInt128(0), GCM, true)])
-    else
-        remainder = Polynomial(remainder_coeffs[1:remainder_degree]).reduce_pol()
-    end
-
-    return (quotient, remainder)
-end
-
-function gfpoly_powmod(A::Polynomial, M::Polynomial, k::Integer)::Polynomial
-    if k < 0
-        throw(ArgumentError("Exponent must be non-negative"))
-    end
-    one_fe = FieldElement(UInt128(1), GCM, true)
-    result = Polynomial([one_fe])
-
-    _, base = A / M
-
-    while k > 0
-        if (k & 1) == 1
-            tmp = result * base
-            _, result = tmp / M
-        end
-        tmp = base * base
-        _, base = tmp / M
-        k >>= 1
-    end
-
-    return result
-end
-
-
-function Base.:√(Q::Polynomial)::Polynomial
-
-    # Validate that Q has only even exponents with non-zero coefficients
-    for i in 0:(Q.power - 1)
-        if isodd(i) && Q.coefficients[i + 1].value != 0
-            throw(ArgumentError("Polynomial Q must have only even exponents with non-zero coefficients."))
-        end
-    end
-
-    # The degree of the square root polynomial S will be floor(Q.power / 2)
-    m = div(Q.power, 2)
-    S_coeffs = Vector{FieldElement}(undef, m + 1)
-
-    for i in 0:m
-        q_2i = Q.coefficients[2 * i + 1]
-        S_coeffs[i + 1] = √q_2i
-    end
-
-    return Polynomial(S_coeffs).reduce_pol()
-end
-
-
-function monic(A::Polynomial)::Polynomial
-    if A.power == 0 && A.coefficients[1].value == 0
-        throw(ArgumentError("Cannot make the zero polynomial monic"))
-    end
-    c = A.coefficients[A.power]
-    c_inv = c.inverse()
-    new_coeffs = [coeff * c_inv for coeff in A.coefficients]
-    return Polynomial(new_coeffs).reduce_pol()
-end
-
-
-function diff(poly::Polynomial)::Polynomial
-    derivative_coeffs::Array{FieldElement} = []
-    coeff::FieldElement = FieldElement(UInt128(0), GCM, false)
-
-    for i in 1:poly.power
-        if isodd(i)
-            coeff = poly.coefficients[i + 1]
-            push!(derivative_coeffs, coeff)
-        else
-            push!(derivative_coeffs, FieldElement(UInt128(0), GCM, false))
-        end
-    end
-
-    derivative_poly = Polynomial(derivative_coeffs).reduce_pol()
-
-    return derivative_poly
-end
-
-
-
-function gcd(A::Polynomial, B::Polynomial)::Polynomial
-    a = reduce_pol(A)
-    b = reduce_pol(B)
-
-    while !is_zero(b)
-        _, r = a / b
-        a, b = b, r
-    end
-
-    return monic(a)
-end
-
-
-
-function repr(p::Polynomial)::Array{String}
-    return [gfe.to_block() for gfe in p.coefficients]
-end
-
-
-@inline function getproperty(p::Polynomial, sym::Symbol)
-    if sym === :repr
-        return () -> repr(p)
-    end
-    if sym === :reduce_pol
-        return () -> reduce_pol(p)
-    end
-    if sym === :monic
-        return () -> monic(p)
-    end
-    if sym === :diff
-        return () -> diff(p)
-    end
-    if sym === :gcd
-        return (b::Polynomial) -> gcd(p, b)
-    end
-    return getfield(p, sym)
-end
 
 ===========================================
-File: src\util\processor.jl
+File: src/util/helper_functions.h
 ===========================================
 
-function add_numbers(jsonContent::Dict)
-    return jsonContent["number1"] + jsonContent["number2"]
-end
+//
+// Created by user on 28/11/24.
+//
 
-function subtract_numbers(jsonContent::Dict)
-    return jsonContent["number1"] - jsonContent["number2"]
-end
-
-function poly2block(jsonContent::Dict)
-    coefficients::Array{UInt8} = jsonContent["coefficients"]
-    semantic = from_string(jsonContent["semantic"])
-    gf = FieldElement(coefficients, semantic)
-    return gf.to_block()
-end
-
-function block2poly(jsonContent::Dict)
-    semantic = from_string(jsonContent["semantic"])
-    block::String = jsonContent["block"]
-
-    gf = FieldElement(block, semantic)
-
-    result = gf.to_polynomial()
-    return result
-end
-
-function gfmul(jsonContent::Dict)
-    semantic = from_string(jsonContent["semantic"])
-    a::String = jsonContent["a"]
-    b::String = jsonContent["b"]
-
-    gf_a = FieldElement(a, semantic)
-    gf_b = FieldElement(b, semantic)
-
-    product = gf_a * gf_b
-    return product.to_block()
-end
-
-function sea128(jsonContent::Dict)
-    mode::String = jsonContent["mode"]
-    key::String = jsonContent["key"]
-    input::String = jsonContent["input"]
-    
-    key_bytes = base64decode(key)
-    input_bytes = base64decode(input)
-
-    if mode == "encrypt"
-        result_bytes = encrypt_sea("aes128", key_bytes, input_bytes)
-    elseif mode == "decrypt"
-        result_bytes = decrypt_sea("aes128", key_bytes, input_bytes)
-    end
-
-    return base64encode(result_bytes)
-end
-
-function xex(jsonContent::Dict)
-    mode::String = jsonContent["mode"]
-    key::String = jsonContent["key"]
-    tweak::String = jsonContent["tweak"]
-    input::String = jsonContent["input"]
-
-    key_bytes = base64decode(key)
-    tweak_bytes = base64decode(tweak)
-    input_bytes = base64decode(input)
-
-    if mode == "encrypt"
-        result_bytes = encrypt_fde(key_bytes, tweak_bytes, input_bytes)
-    elseif mode == "decrypt"
-        result_bytes = decrypt_fde(key_bytes, tweak_bytes, input_bytes)
-    end
-
-    return base64encode(result_bytes)
-end
-
-function gcm_crypt(jsonContent::Dict, mode::String)
-    algorithm::String = jsonContent["algorithm"]
-    key::String = jsonContent["key"]
-    ad::String = jsonContent["ad"]
-    nonce::String = jsonContent["nonce"]
-
-    text::String = ""
-    if mode == "encrypt"
-        text = jsonContent["plaintext"]
-    elseif mode == "decrypt"
-        text = jsonContent["ciphertext"]
-        tag::String = jsonContent["tag"]
-    end
-
-    key_bytes = base64decode(key)
-    ad_bytes = base64decode(ad)
-    nonce_bytes = base64decode(nonce)
-    text_bytes = base64decode(text)
-
-    if mode == "encrypt"
-        result = encrypt_gcm(key_bytes, text_bytes, ad_bytes, nonce_bytes, algorithm)
-        return base64encode(result[1]), result[2].to_block(), base64encode(result[3]), result[4].to_block()
-    elseif mode == "decrypt"
-        result = decrypt_gcm(key_bytes, text_bytes, ad_bytes, nonce_bytes, algorithm)
-        return result[2].to_block() == tag, base64encode(result[1])
-    end
-
-    return result
-end
-
-function gcm_decrypt(jsonContent::Dict)
-    mode::String = "decrypt"
-    return gcm_crypt(jsonContent, mode)
-end
-
-function gcm_encrypt(jsonContent::Dict)
-    mode::String = "encrypt"
-    return gcm_crypt(jsonContent, mode)
-end
-
-function padding_oracle(jsonContent::Dict)
-    hostname::String = jsonContent["hostname"]
-    if hostname == "localhost"
-        hostname = "127.0.0.1"
-    end
-    port::Int = jsonContent["port"]
-    iv::Array{UInt8} = base64decode(jsonContent["iv"])
-    ciphertext::Array{UInt8} = base64decode(jsonContent["ciphertext"])
-    #result = padding_attack(hostname, port, iv, ciphertext)
-    #return base64encode(result)
-    return "test"
-end
-
-function polynomial_add(jsonContent::Dict)
-    A::Array{String} = jsonContent["A"]
-    B::Array{String} = jsonContent["B"]
-
-    poly_A = Polynomial(A)
-    poly_B = Polynomial(B)
-
-    return (poly_A + poly_B).repr()
-end
-
-function polynomial_mul(jsonContent::Dict)
-    A::Array{String} = jsonContent["A"]
-    B::Array{String} = jsonContent["B"]
-
-    poly_A = Polynomial(A)
-    poly_B = Polynomial(B)
-
-    return (poly_A * poly_B).repr()
-end
-
-function polynomial_pow(jsonContent::Dict)
-    A::Array{String} = jsonContent["A"]
-    B::Int = jsonContent["k"]
-
-    poly_A = Polynomial(A)
-    return (poly_A ^ B).repr()
-end
-
-function gfdiv(jsonContent::Dict)
-    A::String = jsonContent["a"]
-    B::String = jsonContent["b"]
-
-    a = FieldElement(A, GCM)
-    b = FieldElement(B, GCM)
-    c = a / b
-    return c.to_block()
-end
-
-function polynomial_divmod(jsonContent::Dict)
-    A::Array{String} = jsonContent["A"]
-    B::Array{String} = jsonContent["B"]
-
-    poly_A = Polynomial(A)
-    poly_B = Polynomial(B)
-    result = poly_A / poly_B
-    return result[1].repr(), result[2].repr()
-end
-
-function polynomial_powmod(jsonContent::Dict)
-    A::Array{String} = jsonContent["A"]
-    M::Array{String} = jsonContent["M"]
-    k::Int = jsonContent["k"]
-
-    poly_A = Polynomial(A)
-    poly_M = Polynomial(M)
-
-    return gfpoly_powmod(poly_A, poly_M, k).repr()
-end
-
-function polynomial_sort(jsonContent::Dict)
-    polys_str::Array{Array{String}} = jsonContent["polys"]
-    polys = [Polynomial(poly) for poly in polys_str]
-    sorted_polys = sort(polys)
-    return [poly.repr() for poly in sorted_polys]
-end
-
-function polynomial_make_monic(jsonContent::Dict)
-    A::Array{String} = jsonContent["A"]
-    poly_A = Polynomial(A)
-    return poly_A.monic().repr()
-end
-
-function polynomial_sqrt(jsonContent::Dict)
-    Q::Array{String} = jsonContent["Q"]
-    poly_Q = Polynomial(Q)
-    return (√poly_Q).repr()
-end
-
-function polynomial_diff(jsonContent::Dict)
-    F::Array{String} = jsonContent["F"]
-    poly_F = Polynomial(F)
-    return poly_F.diff().repr()
-end
-
-function polynomial_gcd(jsonContent::Dict)
-    A::Array{String} = jsonContent["A"]
-    B::Array{String} = jsonContent["B"]
-    poly_A = Polynomial(A)
-    poly_B = Polynomial(B)
-    ans = poly_A.gcd(poly_B)
-    return ans.repr()
-end
-
-ACTIONS::Dict{String, Vector{Any}} = Dict(
-    "add_numbers" => [add_numbers, ["sum"]],
-    "subtract_numbers" => [subtract_numbers, ["difference"]],
-    "poly2block" => [poly2block, ["block"]],
-    "block2poly" => [block2poly, ["coefficients"]],
-    "gfmul" => [gfmul, ["product"]],
-    "sea128" => [sea128, ["output"]],
-    "xex" => [xex, ["output"]],
-    "gcm_encrypt" => [gcm_encrypt, ["ciphertext", "tag", "L", "H"]],
-    "gcm_decrypt" => [gcm_decrypt, ["authentic", "plaintext"]],
-    "padding_oracle" => [padding_oracle, ["plaintext"]],
-    "gfpoly_add" => [polynomial_add, ["S"]],
-    "gfpoly_mul" => [polynomial_mul, ["P"]],
-    "gfpoly_pow" => [polynomial_pow, ["Z"]],
-    "gfdiv" => [gfdiv, ["q"]],
-    "gfpoly_divmod" => [polynomial_divmod, ["Q", "R"]],
-    "gfpoly_powmod" => [polynomial_powmod, ["Z"]],
-    "gfpoly_sort" => [polynomial_sort, ["sorted_polys"]],
-    "gfpoly_make_monic" => [polynomial_make_monic, ["A*"]],
-    "gfpoly_sqrt" => [polynomial_sqrt, ["S"]],
-    "gfpoly_diff" => [polynomial_diff, ["F'"]],
-    "gfpoly_gcd" => [polynomial_gcd, ["G"]],
-)
-
-function process(jsonContent::Dict)
-
-    result_testcases = Dict()
-
-    for (key, value) in jsonContent["testcases"]
-        action = value["action"]
-        arguments = value["arguments"]
-
-        if !haskey(ACTIONS, action)
-            #throw(ErrorException("Unknown action: $action"))
-            continue
-        end
+#ifndef HELPER_FUNCTIONS_H
+#define HELPER_FUNCTIONS_H
 
 
-        output_key = ACTIONS[action][2]
-        result = nothing
-        #println("Processing $action >>> ")
-        #try
-            result = ACTIONS[action][1](arguments)
-        #catch e
-        #    println(stderr, "Error: $e")
-        #    continue
-        #end
+#include <cstdint>
+#include <sstream>
+#include <vector>
+#include <cstdint>
+#include <immintrin.h>
+#include <algorithm>
 
-        json_result = Dict()
 
-        for (i, key) in enumerate(output_key)
-            if length(ACTIONS[action][2]) == 1
-                json_result[key] = result
-            else
-                json_result[key] = result[i]
-            end
-        end
 
-        result_testcases[key] = json_result
-    end
+//idk. 1:1 von chatgpt
+inline std::vector<uint8_t> int_to_bytes(__uint128_t input) {
+    std::vector<uint8_t> output(16);
+    __m128i simd_value = _mm_set_epi64x(static_cast<uint64_t>(input >> 64), static_cast<uint64_t>(input));
+    _mm_storeu_si128(reinterpret_cast<__m128i*>(output.data()), simd_value);
+    return output;
+}
 
-    println(JSON.json(Dict("responses" => result_testcases)))
 
-end
+
+inline __uint128_t bytes_to_uint128(const std::vector<uint8_t>& bytes) {
+    __uint128_t result = 0;
+    for (size_t i = 0; i < 16; ++i) {
+        result = (result << 8) | bytes[i];
+    }
+    return result;
+}
+
+
+inline void reverse_bytes_vector(std::vector<uint8_t>& bytes) {
+    std::reverse(bytes.begin(), bytes.end());
+}
+
+
+inline __uint128_t reverse_bytes_int(__uint128_t value) {
+    uint64_t high = static_cast<uint64_t>(value >> 64);
+    uint64_t low = static_cast<uint64_t>(value);
+    high = __builtin_bswap64(high);
+    low = __builtin_bswap64(low);
+    return (static_cast<__uint128_t>(low) << 64) | high;
+}
+
+
+uint64_t reverse_bits_64(uint64_t n) {
+    n = ((n & 0xAAAAAAAAAAAAAAAA) >> 1) | ((n & 0x5555555555555555) << 1); // Swap adjacent bits
+    n = ((n & 0xCCCCCCCCCCCCCCCC) >> 2) | ((n & 0x3333333333333333) << 2); // Swap pairs of bits
+    n = ((n & 0xF0F0F0F0F0F0F0F0) >> 4) | ((n & 0x0F0F0F0F0F0F0F0F) << 4); // Swap nibbles (4 bits)
+    n = ((n & 0xFF00FF00FF00FF00) >> 8) | ((n & 0x00FF00FF00FF00FF) << 8); // Swap bytes
+    n = ((n & 0xFFFF0000FFFF0000) >> 16) | ((n & 0x0000FFFF0000FFFF) << 16); // Swap 16-bit words
+    n = (n >> 32) | (n << 32); // Swap 32-bit halves
+    return n;
+}
+
+
+
+inline __uint128_t reverse_bits(__uint128_t n) {
+    uint64_t high = static_cast<uint64_t>(n >> 64);
+    uint64_t low = static_cast<uint64_t>(n);
+    high = reverse_bits_64(high);
+    low = reverse_bits_64(low);
+    return (static_cast<__uint128_t>(low) << 64) | high;
+}
+
+
+
+inline __uint128_t int_to_semantic(__uint128_t val, Semantic sem) {
+    if(sem == Semantic::GCM) {
+        return reverse_bits(val);
+    }
+    return reverse_bytes_int(val);
+}
+
+#endif //HELPER_FUNCTIONS_H
+
 
 ===========================================
-File: src\util\semantic_types.jl
+File: src/util/lookup.h
 ===========================================
 
-@enum Semantic GCM XEX
+//
+// Created by user on 28/11/24.
+//
 
-function from_string(s::String)::Semantic
-    return s == "gcm" ? GCM : XEX
-end
+#ifndef LOOKUP_H
+#define LOOKUP_H
+
+
+
+
+#endif //LOOKUP_H
+
+
+===========================================
+File: src/util/my_Stuff.txt
+===========================================
+
+uint64_t reverse_bits_64_functioning(uint64_t n) {
+    n = (n >> 1) & 0x5555555555555555ULL | (n & 0x5555555555555555ULL) << 1;
+    n = (n >> 2) & 0x3333333333333333ULL | (n & 0x3333333333333333ULL) << 2;
+    n = (n >> 4) & 0x0F0F0F0F0F0F0F0FULL | (n & 0x0F0F0F0F0F0F0F0FULL) << 4;
+    n = (n >> 8) & 0x00FF00FF00FF00FFULL | (n & 0x00FF00FF00FF00FFULL) << 8;
+    n = (n >> 16) & 0x0000FFFF0000FFFFULL | (n & 0x0000FFFF0000FFFFULL) << 16;
+    n = (n >> 32) | (n << 32);
+    return n;
+}
+
+
+
+inline std::vector<uint8_t> int_to_bytes_functioning(unsigned __int128 value) {
+    std::vector<uint8_t> bytes(16);
+    for (int i = 0; i < 16; ++i) {
+        bytes[i] = static_cast<uint8_t>(value >> (i * 8));
+    }
+    return bytes;
+}
+
+===========================================
+File: src/util/processor.cpp
+===========================================
+
+// src/util/processor.cpp
+#include "processor.h"
+#include "../math/galois.h"
+#include "../math/polynom.h"
+#include "../algorithms/gcm.h"
+#include "../algorithms/sea128.h"
+#include "../algorithms/xex_fde.h"
+#include "../algorithms/padding_oracle.h"
+#include "semantic_types.h"
+#include "base64_utils.h"
+
+#include <unordered_map>
+#include <functional>
+#include <stdexcept>
+#include <vector>
+#include <string>
+#include <iostream>
+
+
+using json = nlohmann::json;
+
+// Define all action functions
+json add_numbers(const json& arguments) {
+    return arguments["number1"].get<int>() + arguments["number2"].get<int>();
+}
+
+json subtract_numbers(const json& arguments){
+    return arguments["number1"].get<int>() - arguments["number2"].get<int>();
+}
+
+json poly2block(const json& arguments){
+    std::vector<uint8_t> coefficients = arguments["coefficients"].get<std::vector<uint8_t>>();
+    Semantic semantic = from_string(arguments["semantic"].get<std::string>());
+    FieldElement fieldElement = FieldElement(coefficients, semantic);
+    return fieldElement.to_block();
+}
+
+json block2poly(const json& arguments){
+    Semantic semantic = from_string(arguments["semantic"].get<std::string>());
+    std::string block = arguments["block"].get<std::string>();
+    FieldElement fieldElement = FieldElement(block, semantic);
+    return fieldElement.to_polynomial();
+}
+
+json gfmul(const json& arguments){
+    Semantic semantic = from_string(arguments["semantic"].get<std::string>());
+
+    std::string a_str = arguments["a"].get<std::string>();
+    std::string b_str = arguments["b"].get<std::string>();
+    // Convert to FieldElement
+    FieldElement a(a_str, semantic);
+    FieldElement b(b_str, semantic);
+    FieldElement product = a * b;
+
+    return product.to_block();
+}
+
+json sea128_operation(const json& arguments){
+    std::string mode = arguments["mode"].get<std::string>();
+    std::string key_str = arguments["key"].get<std::string>();
+    std::string input_str = arguments["input"].get<std::string>();
+    // Decode base64 key and input
+    std::vector<uint8_t> key = base64_decode(key_str);
+    std::vector<uint8_t> input = base64_decode(input_str);
+    std::vector<uint8_t> result;
+    if(mode == "encrypt"){
+        result = encrypt_sea(key, input);
+    }
+    else{
+        result = decrypt_sea(key, input);
+    }
+    // Encode result to base64
+    return base64_encode(result);
+}
+
+json xex_fde_operation(const json& arguments){
+    std::string mode = arguments["mode"].get<std::string>();
+    std::string key_str = arguments["key"].get<std::string>();
+    std::string tweak_str = arguments["tweak"].get<std::string>();
+    std::string input_str = arguments["input"].get<std::string>();
+
+    // Decode base64
+    std::vector<uint8_t> key = base64_decode(key_str); 
+    std::vector<uint8_t> tweak = base64_decode(tweak_str); 
+    std::vector<uint8_t> input = base64_decode(input_str); 
+
+    std::vector<uint8_t> result;
+    if (mode == "encrypt"){
+        result = encrypt_fde(key, tweak, input);
+    }
+    else{
+        result = decrypt_fde(key, tweak, input);
+    }
+
+    // Encode result to base64
+    std::string result_b64 = base64_encode(result); // Replace with actual encoding
+    return result_b64;
+}
+
+json padding_oracle_attack(const json& arguments){
+    std::string hostname = arguments["hostname"].get<std::string>();
+    int port = arguments["port"].get<int>();
+    std::string iv_str = arguments["iv"].get<std::string>();
+    std::string ciphertext_str = arguments["ciphertext"].get<std::string>();
+
+    // Decode base64
+    std::vector<uint8_t> iv;          // Implement base64 decoding
+    std::vector<uint8_t> ciphertext;  // Implement base64 decoding
+
+    // Perform padding oracle attack
+    std::vector<uint8_t> plaintext = padding_attack(hostname, port, iv, ciphertext);
+
+    // Encode plaintext to base64
+    std::string plaintext_b64 = "plaintext_b64"; // Replace with actual encoding
+    return plaintext_b64;
+}
+
+json gcm_crypt(const json& arguments, bool encrypt){
+    std::string algorithm = arguments["algorithm"].get<std::string>();
+    std::string nonce_str = arguments["nonce"].get<std::string>();
+    std::string key_str = arguments["key"].get<std::string>();
+    std::string ad_str = arguments["ad"].get<std::string>();
+
+    // Decode base64
+    std::vector<uint8_t> key = base64_decode(key_str);
+    std::vector<uint8_t> ad = base64_decode(ad_str);
+    std::vector<uint8_t> nonce = base64_decode(nonce_str);
+
+    if(encrypt){
+        std::string plaintext_str = arguments["plaintext"].get<std::string>();
+        // Decode plaintext
+        std::vector<uint8_t> plaintext = base64_decode(plaintext_str);
+        auto [ciphertext, tag, L, H] = encrypt_gcm(key, plaintext, ad, nonce, algorithm);
+        // Encode ciphertext and tag to base64
+        std::string ciphertext_b64 = base64_encode(ciphertext);
+        std::string tag_b64 = base64_encode(tag);
+        return {ciphertext_b64, tag_b64, "L_placeholder", "H_placeholder"};
+    }
+    else{
+        std::string ciphertext_str = arguments["ciphertext"].get<std::string>();
+        std::string tag_str = arguments["tag"].get<std::string>();
+        // Decode ciphertext and tag
+        std::vector<uint8_t> ciphertext = base64_decode(ciphertext_str);
+        std::vector<uint8_t> tag = base64_decode(tag_str);
+        auto [plaintext, len_block, auth_key] = decrypt_gcm(key, ciphertext, ad, nonce, algorithm);
+        // Encode plaintext to base64
+        std::string plaintext_b64 = base64_encode(plaintext);
+        bool authentic = true; // Placeholder: Compare tags
+        return {authentic, plaintext_b64};
+    }
+}
+
+json gcm_encrypt(const json& arguments){
+    return gcm_crypt(arguments, true);
+}
+
+json gcm_decrypt(const json& arguments){
+    return gcm_crypt(arguments, false);
+}
+
+
+
+json polynomial_add(const json& arguments){
+    std::vector<std::string> A = arguments["A"].get<std::vector<std::string>>();
+    std::vector<std::string> B = arguments["B"].get<std::vector<std::string>>();
+
+    Polynomial poly_A(A, Semantic::GCM);
+    Polynomial poly_B(B, Semantic::GCM);
+
+    Polynomial sum = poly_A + poly_B;
+    return sum.repr();
+}
+
+json polynomial_mul(const json& arguments){
+    std::vector<std::string> A = arguments["A"].get<std::vector<std::string>>();
+    std::vector<std::string> B = arguments["B"].get<std::vector<std::string>>();
+
+    Polynomial poly_A(A, Semantic::GCM);
+    Polynomial poly_B(B, Semantic::GCM);
+
+    Polynomial product = poly_A * poly_B;
+    return product.repr();
+}
+
+json polynomial_pow(const json& arguments){
+    std::vector<std::string> A = arguments["A"].get<std::vector<std::string>>();
+    int k = arguments["k"].get<int>();
+
+    Polynomial poly_A(A, Semantic::GCM);
+    Polynomial power = poly_A ^ k;
+    return power.repr();
+}
+
+json gfdiv(const json& arguments){
+    std::string a_str = arguments["a"].get<std::string>();
+    std::string b_str = arguments["b"].get<std::string>();
+
+    // Decode a and b
+    __uint128_t a_val = 0; // Placeholder: Decode a_str
+    __uint128_t b_val = 0; // Placeholder: Decode b_str
+
+    FieldElement a(a_val, Semantic::GCM, true);
+    FieldElement b(b_val, Semantic::GCM, true);
+    FieldElement c = a % b; // Implement division
+
+    return c.to_block();
+}
+
+json polynomial_divmod(const json& arguments){
+    std::vector<std::string> A = arguments["A"].get<std::vector<std::string>>();
+    std::vector<std::string> B = arguments["B"].get<std::vector<std::string>>();
+
+    Polynomial poly_A(A, Semantic::GCM);
+    Polynomial poly_B(B, Semantic::GCM);
+
+    auto [Q, R] = poly_A.divide(poly_B);
+    return {Q.repr(), R.repr()};
+}
+
+json polynomial_powmod(const json& arguments){
+    std::vector<std::string> A = arguments["A"].get<std::vector<std::string>>();
+    std::vector<std::string> M = arguments["M"].get<std::vector<std::string>>();
+    int k = arguments["k"].get<int>();
+
+    Polynomial poly_A(A, Semantic::GCM);
+    Polynomial poly_M(M, Semantic::GCM);
+
+    // Implement gfpoly_powmod
+    // Placeholder:
+    Polynomial result = poly_A ^ k; // Replace with actual powmod
+    return result.repr();
+}
+
+json polynomial_sort(const json& arguments){
+    std::vector<std::vector<std::string>> polys_str = arguments["polys"].get<std::vector<std::vector<std::string>>>();
+    std::vector<Polynomial> polys;
+    for(const auto& poly_str : polys_str){
+        polys.emplace_back(Polynomial(poly_str, Semantic::GCM));
+    }
+    std::sort(polys.begin(), polys.end());
+    std::vector<std::vector<std::string>> sorted_polys;
+    for(const auto& poly : polys){
+        sorted_polys.emplace_back(poly.repr());
+    }
+    return sorted_polys;
+}
+
+json polynomial_make_monic(const json& arguments){
+    std::vector<std::string> A = arguments["A"].get<std::vector<std::string>>();
+    Polynomial poly_A(A, Semantic::GCM);
+    Polynomial monic = poly_A.monic();
+    return monic.repr();
+}
+
+json polynomial_sqrt(const json& arguments){
+    std::vector<std::string> Q = arguments["Q"].get<std::vector<std::string>>();
+    Polynomial poly_Q(Q, Semantic::GCM);
+    // Implement sqrt
+    // Placeholder:
+    Polynomial sqrt_poly = poly_Q; // Replace with actual sqrt
+    return sqrt_poly.repr();
+}
+
+json polynomial_diff(const json& arguments){
+    std::vector<std::string> F = arguments["F"].get<std::vector<std::string>>();
+    Polynomial poly_F(F, Semantic::GCM);
+    Polynomial derivative = poly_F.diff();
+    return derivative.repr();
+}
+
+json polynomial_gcd(const json& arguments){
+    std::vector<std::string> A = arguments["A"].get<std::vector<std::string>>();
+    std::vector<std::string> B = arguments["B"].get<std::vector<std::string>>();
+    Polynomial poly_A(A, Semantic::GCM);
+    Polynomial poly_B(B, Semantic::GCM);
+    Polynomial ans = poly_A.gcd(poly_B);
+    return ans.repr();
+}
+
+struct Action {
+    std::function<json(const json&)> func;
+    std::vector<std::string> output_keys;
+};
+
+std::unordered_map<std::string, Action> ACTIONS{
+    std::pair<std::string, Action>{"add_numbers", Action{add_numbers, {"sum"}}},
+    std::pair<std::string, Action>{"subtract_numbers", Action{subtract_numbers, {"difference"}}},
+    std::pair<std::string, Action>{"poly2block", Action{poly2block, {"block"}}},
+    std::pair<std::string, Action>{"block2poly", Action{block2poly, {"coefficients"}}},
+    std::pair<std::string, Action>{"gfmul", Action{gfmul, {"product"}}},
+    std::pair<std::string, Action>{"sea128", Action{sea128_operation, {"output"}}},
+    std::pair<std::string, Action>{"xex", Action{xex_fde_operation, {"output"}}},
+    std::pair<std::string, Action>{"gcm_encrypt", Action{gcm_encrypt, {"ciphertext", "tag", "L", "H"}}},
+    std::pair<std::string, Action>{"gcm_decrypt", Action{gcm_decrypt, {"authentic", "plaintext"}}},
+    std::pair<std::string, Action>{"padding_oracle", Action{padding_oracle_attack, {"plaintext"}}},
+    std::pair<std::string, Action>{"gfpoly_add", Action{polynomial_add, {"S"}}},
+    std::pair<std::string, Action>{"gfpoly_mul", Action{polynomial_mul, {"P"}}},
+    std::pair<std::string, Action>{"gfpoly_pow", Action{polynomial_pow, {"Z"}}},
+    std::pair<std::string, Action>{"gfdiv", Action{gfdiv, {"q"}}},
+    std::pair<std::string, Action>{"gfpoly_divmod", Action{polynomial_divmod, {"Q", "R"}}},
+    std::pair<std::string, Action>{"gfpoly_powmod", Action{polynomial_powmod, {"Z"}}},
+    std::pair<std::string, Action>{"gfpoly_sort", Action{polynomial_sort, {"sorted_polys"}}},
+    std::pair<std::string, Action>{"gfpoly_make_monic", Action{polynomial_make_monic, {"A*"}}},
+    std::pair<std::string, Action>{"gfpoly_sqrt", Action{polynomial_sqrt, {"S"}}},
+    std::pair<std::string, Action>{"gfpoly_diff", Action{polynomial_diff, {"F'"}}},
+    std::pair<std::string, Action>{"gfpoly_gcd", Action{polynomial_gcd, {"G"}}}
+};
+
+json process(const json& jsonContent, bool alt){
+    json result_testcases;
+
+    for(auto& [key, value] : jsonContent["testcases"].items()){
+        std::string action = value["action"].get<std::string>();
+        json arguments = value["arguments"];
+
+        if(ACTIONS.find(action) == ACTIONS.end()){
+            continue;
+        }
+
+        Action act = ACTIONS[action];
+        json result;
+        try{
+            result = act.func(arguments);
+        }
+        catch(const std::exception& e){
+            std::cerr << "Error processing action '" << action << "': " << e.what() << std::endl;
+            continue;
+        }
+
+        json json_result;
+        if(act.output_keys.size() ==1){
+            json_result[act.output_keys[0]] = result;
+        }
+        else{
+            for(size_t i=0; i<act.output_keys.size(); ++i){
+                json_result[act.output_keys[i]] = result[i];
+            }
+        }
+
+        result_testcases[key] = json_result;
+    }
+
+    if(alt){
+        return {{"responses", result_testcases}};
+    }
+    else{
+        std::cout << result_testcases.dump(3) << std::endl;
+        return {};
+    }
+}
+
+
+===========================================
+File: src/util/processor.h
+===========================================
+
+// src/util/processor.h
+#ifndef PROCESSOR_H
+#define PROCESSOR_H
+
+#include <string>
+#include <vector>
+#include <cstdint>
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
+
+// Function to process JSON content
+json process(const json& jsonContent, bool alt = false);
+
+#endif // PROCESSOR_H
+
+
+===========================================
+File: src/util/semantic_types.h
+===========================================
+
+#ifndef SEMANTIC_TYPES_H
+#define SEMANTIC_TYPES_H
+
+#include <string>
+
+enum class Semantic {
+    GCM,
+    XEX
+};
+
+inline Semantic from_string(const std::string& s) {
+    if (s == "gcm") {
+        return Semantic::GCM;
+    }
+    return Semantic::XEX;
+}
+
+#endif

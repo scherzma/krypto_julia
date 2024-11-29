@@ -6,3 +6,24 @@ Krypto
 Krypto/
 Krypto_lin/
 Krypto_lin
+
+# Build directories
+/build/
+/build/
+
+# C++ object files
+*.o
+*.obj
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Temporary files
+*.tmp
+*.log
+
+# Editor backups
+*~
+*.swp

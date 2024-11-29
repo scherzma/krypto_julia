@@ -1,2 +1,0 @@
-encrypt_sea(algorithm::String, key::Array{UInt8}, input::Array{UInt8}) = encrypt(algorithm, key, input) .⊻ SEA_CONST
-decrypt_sea(algorithm::String, key::Array{UInt8}, input::Array{UInt8}) = decrypt(algorithm, key, input .⊻ SEA_CONST)

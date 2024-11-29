@@ -1,26 +1,46 @@
 {
   "testcases": {
-    "poly2block4GCMasd": {
-      "action": "poly2block",
+    "gfmul1gcm": {
+      "action": "gfmul",
       "arguments": {
         "semantic": "gcm",
-        "coefficients": [
-          64, 2
-        ]
+        "a": "ARIAAAAAAAAAAAAAAAAAgA==",
+        "b": "AgAAAAAAAAAAAAAAAAAAAA=="
       }
     },
-    "block2poly5GCM": {
-      "action": "block2poly",
+    "gcm_decrypt_sdxea1281": {
+      "action": "gcm_decrypt",
       "arguments": {
-        "semantic": "gcm",
-        "block": "AAABxQgAAAAAAAQQAAAAAA=="
+        "algorithm": "sea128",
+        "nonce": "VOkKCCnH4EYE1z4L",
+        "key": "ByMrTiLP7isfBDL7vsKkOQ==",
+        "ciphertext": "UdpDzPAafM+y",
+        "ad": "UknNF3AKBaF/8GUnFUw=",
+        "tag": "sN0+1fG+WSOHMswF7IBnZA=="
       }
     },
-    "block2poly3GCM": {
-      "action": "block2poly",
+    "gfmul2gcm": {
+      "action": "gfmul",
       "arguments": {
         "semantic": "gcm",
-        "block": "ARIAAAAAAAAAAAAAAAAAgA=="
+        "a": "AAAAAAAAAAAAAAAQBAAAAA==",
+        "b": "IAAAAAAAAACAAAAAAAAAAA=="
+      }
+    },
+    "encryptSEA128": {
+      "action": "sea128",
+      "arguments": {
+        "mode": "encrypt",
+        "key": "istDASeincoolerKEYrofg==",
+        "input": "yv66vvrO263eyviIiDNEVQ=="
+      }
+    },
+    "decryptSEA128": {
+      "action": "sea128",
+      "arguments": {
+        "mode": "decrypt",
+        "key": "istDASeincoolerKEYrofg==",
+        "input": "D5FDo3iVBoBN9gVi9/MSKQ=="
       }
     }
   }
