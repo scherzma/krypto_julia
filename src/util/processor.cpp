@@ -50,6 +50,7 @@ json gfmul(const json& arguments){
     // Convert to FieldElement
     FieldElement a(a_str, semantic);
     FieldElement b(b_str, semantic);
+
     FieldElement product = a * b;
 
     return product.to_block();
@@ -135,10 +136,9 @@ json gcm_crypt_process(const json& arguments, bool encrypt){
         std::string ciphertext_str = arguments["ciphertext"].get<std::string>();
         std::string tag_str = arguments["tag"].get<std::string>();
         std::vector<uint8_t> ciphertext = base64_decode(ciphertext_str);
-        std::vector<uint8_t> tag = base64_decode(tag_str);
         auto [plaintext, auth_tag, len_block, auth_key] = decrypt_gcm(key, ciphertext, ad, nonce, algorithm);
 
-        return {auth_tag == auth_key, base64_encode(plaintext)};
+        return {auth_tag == tag_str, base64_encode(plaintext)};
     }
 }
 
@@ -187,13 +187,10 @@ json gfdiv(const json& arguments){
     std::string a_str = arguments["a"].get<std::string>();
     std::string b_str = arguments["b"].get<std::string>();
 
-    // Decode a and b
-    __uint128_t a_val = 0; // Placeholder: Decode a_str
-    __uint128_t b_val = 0; // Placeholder: Decode b_str
 
-    FieldElement a(a_val, Semantic::GCM, true);
-    FieldElement b(b_val, Semantic::GCM, true);
-    FieldElement c = a % b; // Implement division
+    FieldElement a(a_str, Semantic::GCM);
+    FieldElement b(b_str, Semantic::GCM);
+    FieldElement c = a / b; // Implement division
 
     return c.to_block();
 }
@@ -298,7 +295,7 @@ std::unordered_map<std::string, Action> ACTIONS{
     std::pair<std::string, Action>{"gfpoly_gcd", Action{polynomial_gcd, {"G"}}}
 };
 
-json process(const json& jsonContent, bool alt){
+json process(const json& jsonContent){
     json result_testcases;
 
     for(auto& [key, value] : jsonContent["testcases"].items()){
@@ -306,6 +303,7 @@ json process(const json& jsonContent, bool alt){
         json arguments = value["arguments"];
 
         if(ACTIONS.find(action) == ACTIONS.end()){
+            std::cerr << "Action '" << action << "' not found" << std::endl;
             continue;
         }
 
@@ -332,11 +330,5 @@ json process(const json& jsonContent, bool alt){
         result_testcases[key] = json_result;
     }
 
-    if(alt){
-        return {{"responses", result_testcases}};
-    }
-    else{
-        std::cout << result_testcases.dump(3) << std::endl;
-        return {};
-    }
+    return {{"responses", result_testcases}};
 }

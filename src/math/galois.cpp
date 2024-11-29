@@ -4,6 +4,7 @@
 #include <array>
 #include <stdexcept>
 #include <bitset>
+#include <complex>
 #include <cstring>
 #include <openssl/bn.h>
 #include "util/base64_utils.h"
@@ -44,8 +45,19 @@ FieldElement::FieldElement(const std::string& block, Semantic sem) {
 }
 
 
-FieldElement FieldElement::operator^(const FieldElement& other) const {
-    return {this->value ^ other.value, this->semantic, true};
+FieldElement FieldElement::operator^(const __uint128_t& power) const {
+    FieldElement result(1, this->semantic, true);
+    __uint128_t base = this->value;
+    __uint128_t exponent = power;
+
+    for(int i=0; i<128; ++i){
+        if(exponent & 1) {
+            result = result * base;
+        }
+        result = result * result;
+        exponent >>=1;
+    }
+    return result;
 }
 
 FieldElement FieldElement::operator>>(int b) const {
@@ -54,6 +66,10 @@ FieldElement FieldElement::operator>>(int b) const {
 
 FieldElement FieldElement::operator%(const __uint128_t& b) const {
     return {this->value % b, this->semantic, true};
+}
+
+FieldElement FieldElement::operator/(const FieldElement& other) const { // TODO: Implement this
+    return *this * other.inverse();
 }
 
 FieldElement FieldElement::operator%(const FieldElement& other) const {
@@ -105,7 +121,7 @@ FieldElement FieldElement::operator+(const FieldElement& other) const {
 }
 
 FieldElement FieldElement::operator+(const std::vector<uint8_t>& other) const {
-    return {this->value ^ bytes_to_uint128(other), this->semantic, true};
+    return {this->value ^ int_to_semantic(bytes_to_uint128(other), this->semantic), this->semantic, true};
 }
 
 FieldElement FieldElement::operator-(const FieldElement& other) const {
@@ -113,8 +129,12 @@ FieldElement FieldElement::operator-(const FieldElement& other) const {
 }
 
 FieldElement FieldElement::operator*(const FieldElement& other) const {
+    return *this * other.value;
+}
+
+FieldElement FieldElement::operator*(const __uint128_t& other) const {
     __uint128_t a = this->value;
-    __uint128_t b = other.value;
+    __uint128_t b = other;
     __uint128_t result = 0;
     __uint128_t modulus = 0x87; // x^128 + x^7 + x^2 + x + 1 represented as 0x87
 
@@ -149,7 +169,11 @@ FieldElement FieldElement::inverse() const {
     if(this->is_zero()){
         throw std::invalid_argument("Cannot invert zero element");
     }
-    // Use Extended Euclidean Algorithm for GF(2^128)
-    // Placeholder: actual implementation needed
-    return *this; // Placeholder
+
+    __uint128_t exponent = 0;
+    exponent = ~exponent;
+    exponent -= 1;
+
+
+    return *this ^ exponent; // Placeholder
 }

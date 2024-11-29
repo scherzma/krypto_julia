@@ -6,12 +6,7 @@
 Polynomial::Polynomial(const std::vector<std::string>& coeffs, Semantic semantic_type){
     coefficients.reserve(coeffs.size());
     for(const auto& s : coeffs){
-        // Assume from_string to be a base64 decoder or similar
-        // Implement as needed
-        __uint128_t val = 0; // Placeholder
-        // Decode s to val (Implement base64 decoding)
-        // For example purposes, setting val to 0
-        coefficients.emplace_back(FieldElement(val, semantic_type, true));
+        coefficients.emplace_back(FieldElement(s, semantic_type));
     }
     power = coefficients.size();
     reduce_pol();
@@ -100,26 +95,54 @@ std::pair<Polynomial, Polynomial> Polynomial::divide(const Polynomial& divisor) 
     if(divisor.is_zero()){
         throw std::invalid_argument("Division by zero polynomial");
     }
-    Polynomial dividend = *this;
-    Polynomial quotient({FieldElement(0, Semantic::GCM, true)});
-    int quotient_degree = dividend.power - divisor.power;
-    if(quotient_degree <0){
+
+    Polynomial dividend = this->reduce_pol();
+    Polynomial divisor_reduced = divisor.reduce_pol();
+
+    if(dividend.power < divisor_reduced.power){
+        Polynomial quotient({FieldElement(0, Semantic::GCM, true)});
         return {quotient, dividend};
     }
-    quotient.coefficients.resize(quotient_degree +1, FieldElement(0, Semantic::GCM, true));
-    while(dividend.power >= divisor.power && !dividend.is_zero()){
-        int shift = dividend.power - divisor.power;
-        FieldElement factor = dividend.coefficients[dividend.power -1] * divisor.coefficients[divisor.power -1].inverse();
-        quotient.coefficients[shift] = quotient.coefficients[shift] + factor;
-        // Subtract (divisor * factor * x^shift) from dividend
-        for(int i=0; i<divisor.power; ++i){
-            dividend.coefficients[i + shift] = dividend.coefficients[i + shift] - (divisor.coefficients[i] * factor);
+
+    int quotient_degree = dividend.power - divisor_reduced.power;
+    std::vector<FieldElement> quotient_coeffs(quotient_degree +1, FieldElement(0, Semantic::GCM, true));
+
+    std::vector<FieldElement> remainder_coeffs = dividend.coefficients;
+    int remainder_degree = dividend.power;
+
+    FieldElement divisor_lead = divisor_reduced.coefficients[divisor_reduced.power -1];
+    FieldElement divisor_inv = divisor_lead.inverse();
+
+    while(remainder_degree >= divisor_reduced.power){
+        FieldElement lead_coeff_rem = remainder_coeffs[remainder_degree -1];
+        FieldElement factor = lead_coeff_rem * divisor_inv;
+        int degree_diff = remainder_degree - divisor_reduced.power;
+        quotient_coeffs[degree_diff] = quotient_coeffs[degree_diff] + factor;
+
+        for(int i=0; i< divisor_reduced.power; ++i){
+            int j = i + degree_diff;
+            remainder_coeffs[j] = remainder_coeffs[j] - (divisor_reduced.coefficients[i] * factor);
         }
-        dividend.reduce_pol();
+
+        while(remainder_degree >0 && remainder_coeffs[remainder_degree -1].is_zero()){
+            remainder_degree--;
+        }
+
+        if(remainder_degree ==0){
+            break;
+        }
     }
-    quotient.reduce_pol();
-    return {quotient, dividend};
+
+    Polynomial quotient(quotient_coeffs);
+    quotient = quotient.reduce_pol();
+
+    std::vector<FieldElement> remainder_final_coeffs(remainder_coeffs.begin(), remainder_coeffs.begin() + remainder_degree);
+    Polynomial remainder(remainder_final_coeffs);
+    remainder = remainder.reduce_pol();
+
+    return {quotient, remainder};
 }
+
 
 std::vector<std::string> Polynomial::repr() const {
     std::vector<std::string> representation;

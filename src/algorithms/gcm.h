@@ -12,7 +12,7 @@
 
 
 
-std::tuple<std::vector<uint8_t>, std::vector<uint8_t>, std::vector<uint8_t>, std::vector<uint8_t>> decrypt_gcm(
+std::tuple<std::vector<uint8_t>, std::string, std::vector<uint8_t>, std::vector<uint8_t>> decrypt_gcm(
         const std::vector<uint8_t>& key,
         const std::vector<uint8_t>& ciphertext,
         const std::vector<uint8_t>& ad,

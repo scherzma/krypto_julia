@@ -6,27 +6,20 @@ function ghash(key::Array{UInt8}, nonce::Array{UInt8}, text::Array{UInt8}, ad::A
 
     enc_func = algorithm == "aes128" ? encrypt : encrypt_sea 
     auth_key = enc_func("aes128", key, zeros(UInt8, 16))
-    println("auth_key: ", auth_key)
-    println("auth_key: ", arr_to_int(auth_key))
     auth_key = FieldElement(arr_to_int(auth_key), GCM, false)
-    println("auth_key: ", auth_key)
 
     len_block = vcat(
         reverse(reinterpret(UInt8, [length(ad) << 3])),
         reverse(reinterpret(UInt8, [length(text) << 3]))
     )
-    println("len_block: ", len_block)
     
     Y = FieldElement(UInt128(0), GCM, false)
     data = [pad_array(ad); pad_array(text); len_block]
 
-    println("data: ", data)
     for i in 1:16:(length(data) - 1)
         Y += data[i:i+15]
-        println("Y: ", Y, " : ", i)
         Y *= auth_key
-        println("Y*: ", Y, " : ", i)
-    end
+    end 
 
     tag = Y + enc_func("AES128", key, [nonce; UInt8[0,0,0,1]])
 
@@ -55,6 +48,7 @@ end
 
 function decrypt_gcm(key::Array{UInt8}, ciphertext::Array{UInt8}, ad::Array{UInt8}, nonce::Array{UInt8}, algorithm::String)
     auth_tag = ghash(key, nonce, ciphertext, ad, algorithm)
+    println("auth_tag: ", auth_tag[1])
     plaintext = crypt_gcm(key, ciphertext, nonce, algorithm)
     return plaintext, auth_tag[1], auth_tag[2], auth_tag[3]
 end

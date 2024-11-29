@@ -10,6 +10,6 @@
 using json = nlohmann::json;
 
 // Function to process JSON content
-json process(const json& jsonContent, bool alt = false);
+json process(const json& jsonContent);
 
 #endif // PROCESSOR_H

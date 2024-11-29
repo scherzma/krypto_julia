@@ -30,14 +30,16 @@ public:
 
     FieldElement& operator=(const FieldElement&) = default;
     FieldElement& operator=(FieldElement&&) noexcept = default;
-    FieldElement operator^(const FieldElement& other) const;
+    FieldElement operator^(const __uint128_t& other) const;
     FieldElement operator>>(int b) const;
+    FieldElement operator/(const FieldElement& other) const;
     FieldElement operator%(const __uint128_t& b) const;
     FieldElement operator%(const FieldElement& other) const;
     FieldElement operator+(const FieldElement& other) const;
     FieldElement operator+(const std::vector<uint8_t> &other) const;
     FieldElement operator-(const FieldElement& other) const;
     FieldElement operator*(const FieldElement& other) const;
+    FieldElement operator*(const __uint128_t& other) const;
 
 
     [[nodiscard]] std::string bit_string() const;

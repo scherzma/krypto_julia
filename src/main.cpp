@@ -6,9 +6,14 @@
 using json = nlohmann::json;
 
 int main(int argc, char* argv[]) {
-    // std::string file = "../sample_small.json";
     // std::string file = "../sample.json";
+
+
+
+    // std::string file = "../sample_small.json";
     std::string file = "../sample_current.json";
+
+
     if(argc == 2) {
         file = argv[1];
     }

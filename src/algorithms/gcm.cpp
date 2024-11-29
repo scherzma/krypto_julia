@@ -130,7 +130,7 @@ std::tuple<std::vector<uint8_t>, FieldElement, std::vector<uint8_t>, FieldElemen
 }
 
 
-std::tuple<std::vector<uint8_t>, std::vector<uint8_t>, std::vector<uint8_t>, std::vector<uint8_t>> decrypt_gcm(
+std::tuple<std::vector<uint8_t>, std::string, std::vector<uint8_t>, std::vector<uint8_t>> decrypt_gcm(
         const std::vector<uint8_t>& key,
         const std::vector<uint8_t>& ciphertext,
         const std::vector<uint8_t>& ad,
@@ -140,5 +140,5 @@ std::tuple<std::vector<uint8_t>, std::vector<uint8_t>, std::vector<uint8_t>, std
     auto [auth_tag, len_block, auth_key] = ghash(key, nonce, ciphertext, ad, algorithm);
     auto plaintext = crypt_gcm(key, ciphertext, nonce, algorithm);
 
-    return {plaintext, auth_tag.to_vector(), len_block, auth_key.to_vector()};
+    return {plaintext, auth_tag.to_block(), len_block, auth_key.to_vector()};
 }

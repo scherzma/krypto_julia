@@ -1,13 +1,18 @@
 {
   "testcases": {
-    "gcm_encrypt": {
-      "action": "gcm_encrypt",
+    "gfpoly_powmod": {
+      "action": "gfpoly_powmod",
       "arguments": {
-        "algorithm": "aes128",
-        "nonce": "4gF+BtR3ku/PUQci",
-        "key": "Xjq/GkpTSWoe3ZH0F+tjrQ==",
-        "plaintext": "RGFzIGlzdCBlaW4gVGVzdA==",
-        "ad": "QUQtRGF0ZW4="
+        "A": [
+          "JAAAAAAAAAAAAAAAAAAAAA==",
+          "wAAAAAAAAAAAAAAAAAAAAA==",
+          "ACAAAAAAAAAAAAAAAAAAAA=="
+        ],
+        "M": [
+          "KryptoanalyseAAAAAAAAA==",
+          "DHBWMannheimAAAAAAAAAA=="
+        ],
+        "k": 1000
       }
     }
   }

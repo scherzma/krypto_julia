@@ -30,7 +30,7 @@ std::vector<uint8_t> crypt_fde(const std::vector<uint8_t>& key, std::vector<uint
     std::string crypt_mode = mode == "encrypt" ? "encrypt_sea" : "decrypt_sea";
 
     for(size_t i=0; i < input.size(); i +=16){
-        std::vector<uint8_t> block(input.begin()+i, input.begin()+std::min(i+16, input.size()));
+        std::vector<uint8_t> block(input.begin()+i, input.begin() + std::min(i + 16, input.size()));
         // XOR with tweak
         for(size_t j=0; j<block.size(); ++j){
             block[j] ^= tweak[j];
