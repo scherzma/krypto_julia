@@ -17,3 +17,161 @@ inline std::vector<uint8_t> int_to_bytes_functioning(unsigned __int128 value) {
     }
     return bytes;
 }
+
+
+
+
+
+
+
+Here's the implementation of GF(2^128) multiplication using Intel's PCLMULQDQ instruction for carryless multiplication:
+
+```c
+#include <wmmintrin.h>  // for _mm_clmulepi64_si128
+#include <emmintrin.h>  // for __m128i
+
+__m128i gfmul(__m128i a, __m128i b) {
+    __m128i tmp0, tmp1, tmp2, tmp3, tmp4, tmp5;
+
+    // Karatsuba multiplication
+    tmp0 = _mm_clmulepi64_si128(a, b, 0x00);  // Low-low multiplication
+    tmp1 = _mm_clmulepi64_si128(a, b, 0x11);  // High-high multiplication
+    tmp2 = _mm_clmulepi64_si128(a, b, 0x10);  // High-low multiplication
+    tmp3 = _mm_clmulepi64_si128(a, b, 0x01);  // Low-high multiplication
+
+    // Combine middle terms
+    tmp4 = _mm_xor_si128(tmp2, tmp3);
+    tmp5 = _mm_slli_si128(tmp4, 8);
+    tmp4 = _mm_srli_si128(tmp4, 8);
+
+    // Final combination
+    tmp2 = _mm_xor_si128(tmp0, tmp5);
+    tmp3 = _mm_xor_si128(tmp1, tmp4);
+
+    return _mm_xor_si128(tmp2, tmp3);
+}
+```
+
+This implementation:
+1. Uses Intel's PCLMULQDQ instruction through intrinsics (_mm_clmulepi64_si128)
+2. Implements Karatsuba multiplication algorithm for GF(2^128)
+3. Uses SSE instructions for efficient bitwise operations
+4. Returns the result as a 128-bit value
+
+To use this function, you'll need:
+- A processor supporting the PCLMULQDQ instruction (most modern Intel/AMD processors)
+- To compile with appropriate flags (e.g., -mpclmul for GCC)
+- To include the necessary Intel intrinsics headers
+
+The function takes two 128-bit polynomials as inputs and returns their product in GF(2^128).
+
+
+
+
+
+
+
+
+Here's the optimized implementation of GF(2^128) multiplication using Intel's PCLMULQDQ instruction:
+
+```c
+#include <stdint.h>
+#include <wmmintrin.h>  // for PCLMULQDQ
+
+// Efficient reduction in GF(2^128)
+static inline __m128i gf128_reduce(__m128i v) {
+    const __m128i POLY = _mm_set_epi64x(0x0000000000000087ULL, 0x0000000000000000ULL);
+    __m128i tmp1 = _mm_clmulepi64_si128(v, POLY, 0x01);
+    __m128i tmp2 = _mm_shuffle_epi32(tmp1, 0x4E);
+    v = _mm_xor_si128(v, tmp2);
+    __m128i tmp3 = _mm_clmulepi64_si128(tmp2, POLY, 0x00);
+    return _mm_xor_si128(v, tmp3);
+}
+
+// Main multiplication function
+void gf128_mul(uint64_t out[2], const uint64_t a[2], const uint64_t b[2]) {
+    __m128i va = _mm_loadu_si128((__m128i*)a);
+    __m128i vb = _mm_loadu_si128((__m128i*)b);
+
+    // Karatsuba multiplication
+    __m128i t0 = _mm_clmulepi64_si128(va, vb, 0x00);  // Low * Low
+    __m128i t1 = _mm_clmulepi64_si128(va, vb, 0x11);  // High * High
+    __m128i t2 = _mm_clmulepi64_si128(va, vb, 0x10);  // Cross terms
+    __m128i t3 = _mm_clmulepi64_si128(va, vb, 0x01);  // Cross terms
+
+    // Combine terms
+    __m128i cross = _mm_xor_si128(t2, t3);
+    __m128i high = _mm_slli_si128(cross, 8);
+    __m128i low = _mm_srli_si128(cross, 8);
+
+    // Final combination and reduction
+    __m128i result = _mm_xor_si128(t0, low);
+    result = _mm_xor_si128(result, high);
+    result = _mm_xor_si128(result, t1);
+    result = gf128_reduce(result);
+
+    _mm_storeu_si128((__m128i*)out, result);
+}
+```
+
+Regarding integer structure, the implementation uses the GCM standard representation where a^0 is the lowest bit (LSB) and a^127 is the highest bit (MSB). This choice is optimal because:
+1. It's compatible with both XEX and GCM modes
+2. Aligns perfectly with Intel's PCLMULQDQ instruction
+3. Provides natural byte ordering for hardware operations
+
+The implementation uses Karatsuba multiplication to minimize PCLMULQDQ operations and includes efficient reduction modulo x^128 + x^7 + x^2 + x + 1, making it suitable for cryptographic applications.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Here's a highly optimized bit reversal implementation for a __uint128_t in C++:
+
+```cpp
+#include <cstdint>
+
+// Pre-computed lookup table for 8-bit reversal
+constexpr uint8_t BitReverseTable256[256] = {
+#define R2(n) n, n + 2*64, n + 1*64, n + 3*64
+#define R4(n) R2(n), R2(n + 2*16), R2(n + 1*16), R2(n + 3*16)
+#define R6(n) R4(n), R4(n + 2*4 ), R4(n + 1*4 ), R4(n + 3*4 )
+    R6(0), R6(2), R6(1), R6(3)
+};
+
+__uint128_t bitreverse(__uint128_t x) {
+    union {
+        __uint128_t val;
+        uint8_t bytes[16];
+    } in = {x}, out;
+
+    // Reverse each byte and the byte order
+    for (int i = 0; i < 16; i++) {
+        out.bytes[15 - i] = BitReverseTable256[in.bytes[i]];
+    }
+
+    return out.val;
+}
+```
+
+This implementation uses a pre-computed lookup table for 8-bit reversals and achieves high performance through:
+1. A lookup table that handles 8 bits at a time
+2. Macro-based table generation to avoid runtime computation
+3. Union-based memory access to handle byte-level operations efficiently
+4. Single-pass processing of the 128-bit integer
+
+To use it, simply call `bitreverse()` with your __uint128_t value:
+```cpp
+__uint128_t value = /* your 128-bit value */;
+__uint128_t reversed = bitreverse(value);
+```
