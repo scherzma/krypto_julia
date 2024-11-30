@@ -22,7 +22,7 @@ Directory Structure:
             📄 base64_utils.h (Content follows below)
             📄 helper_functions.h (Content follows below)
             📄 lookup.h (Content follows below)
-            📄 my_Stuff.txt (Content follows below)
+            📄 my_Stuff.txt1
             📄 processor.cpp (Content follows below)
             📄 processor.h (Content follows below)
             📄 semantic_types.h (Content follows below)
@@ -96,9 +96,14 @@ File: src/main.cpp
 using json = nlohmann::json;
 
 int main(int argc, char* argv[]) {
+    std::string file = "../sample.json";
+
+
+
     // std::string file = "../sample_small.json";
-    // std::string file = "../sample.json";
-    std::string file = "../sample_current.json";
+    // std::string file = "../sample_current.json";
+
+
     if(argc == 2) {
         file = argv[1];
     }
@@ -123,996 +128,6 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
-
-===========================================
-File: src/algorithms/gcm.cpp
-===========================================
-
-// src/algorithms/gcm.cpp
-#include "gcm.h"
-#include "../util/semantic_types.h"
-#include "../util/helper_functions.h"
-#include "../math/galois.h"
-#include "../algorithms/sea128.h"
-#include <vector>
-#include <cstdint>
-#include <stdexcept>
-#include <tuple>
-#include <algorithm>
-#include <functional>
-
-std::tuple<std::vector<uint8_t>, std::vector<uint8_t>, std::vector<uint8_t>, std::vector<uint8_t>> encrypt_gcm(
-    const std::vector<uint8_t>& key,
-    const std::vector<uint8_t>& plaintext,
-    const std::vector<uint8_t>& ad,
-    const std::vector<uint8_t>& nonce,
-    const std::string& algorithm)
-{
-    // Define the encryption function based on the algorithm
-    std::function<std::vector<uint8_t>(const std::vector<uint8_t>&, const std::vector<uint8_t>&)> enc_func;
-    if (algorithm == "aes128") {
-        enc_func = aes_encrypt;
-    }
-    else if (algorithm == "sea128") {
-        enc_func = encrypt_sea;
-    }
-    else {
-        throw std::invalid_argument("Unsupported algorithm: " + algorithm);
-    }
-
-    // Encrypt the zero block to get H
-    std::vector<uint8_t> zero_block(16, 0);
-    std::vector<uint8_t> encrypted_zero = enc_func(key, zero_block);
-    // Convert H to uint128_t
-    __uint128_t H_int = bytes_to_uint128(encrypted_zero);
-    // Create FieldElement H
-    FieldElement H(H_int, Semantic::GCM, false);
-
-    // Compute len_block: length of AD and plaintext in bits, each as 64-bit big-endian
-    uint64_t ad_bit_len = static_cast<uint64_t>(ad.size()) * 8;
-    uint64_t text_bit_len = static_cast<uint64_t>(plaintext.size()) * 8;
-
-    // Convert to big endian bytes
-    std::vector<uint8_t> len_block(16, 0);
-    for(int i = 0; i < 8; ++i){
-        len_block[15 - i] = (ad_bit_len >> (i * 8)) & 0xFF;
-        len_block[7 - i] = (text_bit_len >> (i * 8)) & 0xFF;
-    }
-
-    // Pad AD and plaintext
-    auto pad_array = [&](const std::vector<uint8_t>& arr) -> std::vector<uint8_t> {
-        size_t pad_len = (16 - (arr.size() % 16)) % 16;
-        std::vector<uint8_t> padded = arr;
-        padded.resize(arr.size() + pad_len, 0);
-        return padded;
-    };
-
-    std::vector<uint8_t> padded_ad = pad_array(ad);
-    std::vector<uint8_t> padded_text = pad_array(plaintext);
-
-    // Concatenate padded AD, padded text, and len_block
-    std::vector<uint8_t> data;
-    data.reserve(padded_ad.size() + padded_text.size() + len_block.size());
-    data.insert(data.end(), padded_ad.begin(), padded_ad.end());
-    data.insert(data.end(), padded_text.begin(), padded_text.end());
-    data.insert(data.end(), len_block.begin(), len_block.end());
-
-    // Initialize Y as zero
-    FieldElement Y(0, Semantic::GCM, false);
-
-    // Iterate over each 16-byte block
-    for(size_t i = 0; i < data.size(); i += 16){
-        // Extract 16-byte block
-        std::vector<uint8_t> block(data.begin() + i, data.begin() + i + 16);
-        // Convert block to uint128_t
-        __uint128_t block_int = bytes_to_uint128(block);
-        // Create FieldElement
-        FieldElement block_fe(block_int, Semantic::GCM, false);
-        // Y += block_fe
-        Y = Y + block_fe;
-        // Y *= H
-        Y = Y * H;
-    }
-
-    // Encrypt nonce || 0x00000001 to get S
-    std::vector<uint8_t> ctr_block = nonce;
-    if(nonce.size() != 12){
-        throw std::invalid_argument("Nonce must be 12 bytes for GCM.");
-    }
-    ctr_block.insert(ctr_block.end(), {0, 0, 0, 1});
-    std::vector<uint8_t> S = enc_func(key, ctr_block);
-
-    // Convert Y to uint128_t
-    __uint128_t Y_int = Y.value;
-    // Convert S to uint128_t
-    __uint128_t S_int = bytes_to_uint128(S);
-    // Compute tag: Y ^ S
-    __uint128_t tag_int = Y_int ^ S_int;
-
-    // Convert tag_int to bytes
-    std::vector<uint8_t> tag = int_to_bytes(tag_int);
-
-    // Encrypt plaintext using counter mode to get ciphertext
-    std::vector<uint8_t> ciphertext;
-    ciphertext.reserve(plaintext.size());
-    uint32_t counter = 1;
-    for(size_t i = 0; i < plaintext.size(); i += 16){
-        // Create counter block: nonce || counter
-        std::vector<uint8_t> counter_block = nonce;
-        counter_block.push_back((counter >> 24) & 0xFF);
-        counter_block.push_back((counter >> 16) & 0xFF);
-        counter_block.push_back((counter >> 8) & 0xFF);
-        counter_block.push_back(counter & 0xFF);
-        // Encrypt counter block
-        std::vector<uint8_t> enc_ctr = enc_func(key, counter_block);
-        // Determine block size
-        size_t block_size = std::min(static_cast<size_t>(16), plaintext.size() - i);
-        // XOR plaintext with encrypted counter block
-        for(size_t j = 0; j < block_size; ++j){
-            ciphertext.push_back(plaintext[i + j] ^ enc_ctr[j]);
-        }
-        counter++;
-    }
-
-    // Convert len_block to bytes (already in big-endian)
-    // Convert H to bytes
-    std::vector<uint8_t> auth_key_bytes = int_to_bytes(H.value);
-
-    return {ciphertext, tag, len_block, auth_key_bytes};
-}
-
-std::tuple<std::vector<uint8_t>, __uint128_t, std::vector<uint8_t>> decrypt_gcm(
-    const std::vector<uint8_t>& key,
-    const std::vector<uint8_t>& ciphertext,
-    const std::vector<uint8_t>& ad,
-    const std::vector<uint8_t>& nonce,
-    const std::string& algorithm)
-{
-    // Define the encryption function based on the algorithm
-    std::function<std::vector<uint8_t>(const std::vector<uint8_t>&, const std::vector<uint8_t>&)> enc_func;
-    if (algorithm == "aes128") {
-        enc_func = aes_encrypt;
-    }
-    else if (algorithm == "sea128") {
-        enc_func = encrypt_sea;
-    }
-    else {
-        throw std::invalid_argument("Unsupported algorithm: " + algorithm);
-    }
-
-    // Encrypt the zero block to get H
-    std::vector<uint8_t> zero_block(16, 0);
-    std::vector<uint8_t> encrypted_zero = enc_func(key, zero_block);
-    // Convert H to uint128_t
-    __uint128_t H_int = bytes_to_uint128(encrypted_zero);
-    // Create FieldElement H
-    FieldElement H(H_int, Semantic::GCM, false);
-
-    // Compute len_block: length of AD and ciphertext in bits, each as 64-bit big-endian
-    uint64_t ad_bit_len = static_cast<uint64_t>(ad.size()) * 8;
-    uint64_t text_bit_len = static_cast<uint64_t>(ciphertext.size()) * 8;
-
-    // Convert to big endian bytes
-    std::vector<uint8_t> len_block(16, 0);
-    for(int i = 0; i < 8; ++i){
-        len_block[15 - i] = (ad_bit_len >> (i * 8)) & 0xFF;
-        len_block[7 - i] = (text_bit_len >> (i * 8)) & 0xFF;
-    }
-
-    // Pad AD and ciphertext
-    auto pad_array = [&](const std::vector<uint8_t>& arr) -> std::vector<uint8_t> {
-        size_t pad_len = (16 - (arr.size() % 16)) % 16;
-        std::vector<uint8_t> padded = arr;
-        padded.resize(arr.size() + pad_len, 0);
-        return padded;
-    };
-
-    std::vector<uint8_t> padded_ad = pad_array(ad);
-    std::vector<uint8_t> padded_ciphertext = pad_array(ciphertext);
-
-    // Concatenate padded AD, padded ciphertext, and len_block
-    std::vector<uint8_t> data;
-    data.reserve(padded_ad.size() + padded_ciphertext.size() + len_block.size());
-    data.insert(data.end(), padded_ad.begin(), padded_ad.end());
-    data.insert(data.end(), padded_ciphertext.begin(), padded_ciphertext.end());
-    data.insert(data.end(), len_block.begin(), len_block.end());
-
-    // Initialize Y as zero
-    FieldElement Y(0, Semantic::GCM, false);
-
-    // Iterate over each 16-byte block
-    for(size_t i = 0; i < data.size(); i += 16){
-        // Extract 16-byte block
-        std::vector<uint8_t> block(data.begin() + i, data.begin() + i + 16);
-        // Convert block to uint128_t
-        __uint128_t block_int = bytes_to_uint128(block);
-        // Create FieldElement
-        FieldElement block_fe(block_int, Semantic::GCM, false);
-        // Y += block_fe
-        Y = Y + block_fe;
-        // Y *= H
-        Y = Y * H;
-    }
-
-    // Encrypt nonce || 0x00000001 to get S
-    std::vector<uint8_t> ctr_block = nonce;
-    if(nonce.size() != 12){
-        throw std::invalid_argument("Nonce must be 12 bytes for GCM.");
-    }
-    ctr_block.insert(ctr_block.end(), {0, 0, 0, 1});
-    std::vector<uint8_t> S = enc_func(key, ctr_block);
-
-    // Convert Y to uint128_t
-    __uint128_t Y_int = Y.value;
-    // Convert S to uint128_t
-    __uint128_t S_int = bytes_to_uint128(S);
-    // Compute expected tag: Y ^ S
-    __uint128_t expected_tag = Y_int ^ S_int;
-
-    // Assuming the tag is provided externally for verification
-    // Here, you need to pass the tag as an additional parameter to verify
-    // For demonstration, we'll assume the tag is computed and returned
-
-    // Decrypt ciphertext using counter mode to get plaintext
-    std::vector<uint8_t> plaintext;
-    plaintext.reserve(ciphertext.size());
-    uint32_t counter = 1;
-    for(size_t i = 0; i < ciphertext.size(); i += 16){
-        // Create counter block: nonce || counter
-        std::vector<uint8_t> counter_block = nonce;
-        counter_block.push_back((counter >> 24) & 0xFF);
-        counter_block.push_back((counter >> 16) & 0xFF);
-        counter_block.push_back((counter >> 8) & 0xFF);
-        counter_block.push_back(counter & 0xFF);
-        // Encrypt counter block
-        std::vector<uint8_t> enc_ctr = enc_func(key, counter_block);
-        // Determine block size
-        size_t block_size = std::min(static_cast<size_t>(16), ciphertext.size() - i);
-        // XOR ciphertext with encrypted counter block
-        for(size_t j = 0; j < block_size; ++j){
-            plaintext.push_back(ciphertext[i + j] ^ enc_ctr[j]);
-        }
-        counter++;
-    }
-
-    // In a complete implementation, you should verify the tag here
-    // For simplicity, we'll skip tag verification
-
-    // Convert len_block to uint128_t
-    __uint128_t len_block_int = bytes_to_uint128(len_block);
-
-    // Return plaintext, expected_tag, and other components as needed
-    return {plaintext, expected_tag, std::vector<uint8_t>()};
-}
-
-
-===========================================
-File: src/algorithms/gcm.h
-===========================================
-
-// src/algorithms/gcm.h
-#ifndef GCM_H
-#define GCM_H
-
-#include <vector>
-#include <string>
-#include <cstdint>
-#include <tuple>
-
-// Encrypt and return ciphertext, tag, len_block, auth_key
-std::tuple<std::vector<uint8_t>, std::vector<uint8_t>, std::vector<uint8_t>, std::vector<uint8_t>> encrypt_gcm(
-    const std::vector<uint8_t>& key,
-    const std::vector<uint8_t>& plaintext,
-    const std::vector<uint8_t>& ad,
-    const std::vector<uint8_t>& nonce,
-    const std::string& algorithm);
-
-// Decrypt and return plaintext, expected_tag, (additional components if needed)
-std::tuple<std::vector<uint8_t>, __uint128_t, std::vector<uint8_t>> decrypt_gcm(
-    const std::vector<uint8_t>& key,
-    const std::vector<uint8_t>& ciphertext,
-    const std::vector<uint8_t>& ad,
-    const std::vector<uint8_t>& nonce,
-    const std::string& algorithm);
-
-#endif // GCM_H
-
-
-===========================================
-File: src/algorithms/padding_oracle.cpp
-===========================================
-
-// src/algorithms/padding_oracle.cpp
-#include "padding_oracle.h"
-#include <boost/asio.hpp>
-#include <vector>
-#include <cstdint>
-#include <iostream>
-
-using boost::asio::ip::tcp;
-
-struct PaddingClient {
-    tcp::socket socket;
-    PaddingClient(boost::asio::io_context& io_context, const std::string& hostname, int port)
-        : socket(io_context) {
-        tcp::resolver resolver(io_context);
-        boost::asio::connect(socket, resolver.resolve(hostname, std::to_string(port)));
-    }
-
-    void send(const std::vector<uint8_t>& data){
-        boost::asio::write(socket, boost::asio::buffer(data));
-    }
-
-    std::vector<uint8_t> receive(int length){
-        std::vector<uint8_t> data(length);
-        boost::asio::read(socket, boost::asio::buffer(data, length));
-        return data;
-    }
-};
-
-std::vector<uint8_t> attack_block(const std::string& hostname, int port, const std::vector<uint8_t>& block, const std::vector<uint8_t>& previous_block){
-    // Implement attack logic
-    // Placeholder implementation
-    std::vector<uint8_t> plaintext_block(block.size(), 0);
-    // Actual implementation needed
-    return plaintext_block;
-}
-
-std::vector<uint8_t> padding_attack(const std::string& hostname, int port, const std::vector<uint8_t>& iv, const std::vector<uint8_t>& ciphertext){
-    std::vector<uint8_t> plaintext;
-    std::vector<uint8_t> text = iv;
-    text.insert(text.end(), ciphertext.begin(), ciphertext.end());
-
-    for(size_t i=16; i < text.size(); i +=16){
-        std::vector<uint8_t> block_to_decrypt(text.begin()+i, text.begin()+i+16);
-        std::vector<uint8_t> previous_block(text.begin()+i-16, text.begin()+i);
-        std::vector<uint8_t> decrypted_block = attack_block(hostname, port, block_to_decrypt, previous_block);
-        plaintext.insert(plaintext.end(), decrypted_block.begin(), decrypted_block.end());
-    }
-
-    // Remove padding
-    if(!plaintext.empty()){
-        uint8_t pad = plaintext.back();
-        if(pad <=16){
-            plaintext.erase(plaintext.end() - pad, plaintext.end());
-        }
-    }
-    return plaintext;
-}
-
-
-===========================================
-File: src/algorithms/padding_oracle.h
-===========================================
-
-// src/algorithms/padding_oracle.h
-#ifndef PADDING_ORACLE_H
-#define PADDING_ORACLE_H
-
-#include <vector>
-#include <string>
-#include <cstdint>
-
-// Function to perform padding oracle attack
-std::vector<uint8_t> padding_attack(const std::string& hostname, int port, const std::vector<uint8_t>& iv, const std::vector<uint8_t>& ciphertext);
-
-#endif // PADDING_ORACLE_H
-
-
-===========================================
-File: src/algorithms/sea128.cpp
-===========================================
-
-// sea128.cpp
-#include "sea128.h"
-#include <botan/block_cipher.h>
-#include <botan/aes.h>
-#include <stdexcept>
-#include "gcm.h" // If needed
-
-std::vector<uint8_t> aes_encrypt(const std::vector<uint8_t>& input, const std::vector<uint8_t>& key) {
-    Botan::AES_128 aes;
-    aes.set_key(key);
-    std::vector<uint8_t> output(input.size());
-
-    for(size_t i = 0; i < input.size(); i += 16) {
-        aes.encrypt_n(&input[i], &output[i], 1);
-    }
-
-    return output;
-}
-
-std::vector<uint8_t> aes_decrypt(const std::vector<uint8_t>& input, const std::vector<uint8_t>& key) {
-    Botan::AES_128 aes;
-    aes.set_key(key);
-    std::vector<uint8_t> output(input.size());
-
-    for(size_t i = 0; i < input.size(); i += 16) {
-        aes.decrypt_n(&input[i], &output[i], 1);
-    }
-
-    return output;
-}
-
-const std::vector<uint8_t> SEA_CONST = {
-    0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0xc0, 0xff,
-    0xee, 0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0x11
-};
-
-std::vector<uint8_t> encrypt_sea(const std::vector<uint8_t>& key, const std::vector<uint8_t>& input){
-    // Encrypt using SEA
-    std::vector<uint8_t> encrypted = aes_encrypt(input, key);
-    for(size_t i = 0; i < encrypted.size(); ++i){
-        encrypted[i] ^= SEA_CONST[i];
-    }
-    return encrypted;
-}
-
-std::vector<uint8_t> decrypt_sea(const std::vector<uint8_t>& key, const std::vector<uint8_t>& input){
-    // Decrypt using SEA (XOR with SEA_CONST)
-    std::vector<uint8_t> decrypted(input.size());
-    for(size_t i = 0; i < input.size(); ++i){
-        decrypted[i] = input[i] ^ SEA_CONST[i];
-    }
-
-    return aes_decrypt(decrypted, key);
-}
-
-
-===========================================
-File: src/algorithms/sea128.h
-===========================================
-
-// sea128.h
-#ifndef SEA128_H
-#define SEA128_H
-
-#include <string>
-#include <vector>
-#include <cstdint>
-
-// Encrypt using SEA128
-std::vector<uint8_t> encrypt_sea(const std::vector<uint8_t>& key, const std::vector<uint8_t>& input);
-
-// Decrypt using SEA128
-std::vector<uint8_t> decrypt_sea(const std::vector<uint8_t>& key, const std::vector<uint8_t>& input);
-
-// AES Encrypt
-std::vector<uint8_t> aes_encrypt(const std::vector<uint8_t>& input, const std::vector<uint8_t>& key);
-
-// AES Decrypt
-std::vector<uint8_t> aes_decrypt(const std::vector<uint8_t>& input, const std::vector<uint8_t>& key);
-
-#endif // SEA128_H
-
-
-===========================================
-File: src/algorithms/xex_fde.cpp
-===========================================
-
-// src/algorithms/xex_fde.cpp
-#include "xex_fde.h"
-#include "sea128.h"
-#include <vector>
-#include <string>
-#include <stdexcept>
-
-// Helper function to multiply tweak by alpha
-void mul_alpha(std::vector<uint8_t>& tweak){
-    bool carry = (tweak[15] & 0x80) !=0;
-    for(int i=15; i>0; --i){
-        tweak[i] = (tweak[i] <<1) | (tweak[i-1] >>7);
-    }
-    tweak[0] = (tweak[0] <<1);
-    if(carry){
-        tweak[0] ^= 0x87;
-    }
-}
-
-std::vector<uint8_t> crypt_fde(const std::vector<uint8_t>& key, std::vector<uint8_t> tweak, const std::vector<uint8_t>& input, const std::string& mode){
-    if(key.size() !=32){
-        throw std::invalid_argument("Key must be 32 bytes");
-    }
-    std::vector<uint8_t> k1(key.begin(), key.begin()+16);
-    std::vector<uint8_t> k2(key.begin()+16, key.end());
-
-    tweak = encrypt_sea(k2, tweak);
-
-    std::vector<uint8_t> output;
-    std::string crypt_mode = mode == "encrypt" ? "encrypt_sea" : "decrypt_sea";
-
-    for(size_t i=0; i < input.size(); i +=16){
-        std::vector<uint8_t> block(input.begin()+i, input.begin()+std::min(i+16, input.size()));
-        // XOR with tweak
-        for(size_t j=0; j<block.size(); ++j){
-            block[j] ^= tweak[j];
-        }
-        // Encrypt/decrypt
-        std::vector<uint8_t> crypt_block;
-        if(mode == "encrypt"){
-            crypt_block = encrypt_sea(k1, block);
-        }
-        else{
-            crypt_block = decrypt_sea(k1, block);
-        }
-        // XOR with tweak
-        for(size_t j=0; j<crypt_block.size(); ++j){
-            crypt_block[j] ^= tweak[j];
-        }
-        // Append to output
-        output.insert(output.end(), crypt_block.begin(), crypt_block.end());
-        // Multiply tweak by alpha
-        mul_alpha(tweak);
-    }
-    return output;
-}
-
-std::vector<uint8_t> encrypt_fde(const std::vector<uint8_t>& key, const std::vector<uint8_t>& tweak, const std::vector<uint8_t>& input){
-    std::vector<uint8_t> tweak_copy = tweak;
-    return crypt_fde(key, tweak_copy, input, "encrypt");
-}
-
-std::vector<uint8_t> decrypt_fde(const std::vector<uint8_t>& key, const std::vector<uint8_t>& tweak, const std::vector<uint8_t>& input){
-    std::vector<uint8_t> tweak_copy = tweak;
-    return crypt_fde(key, tweak_copy, input, "decrypt");
-}
-
-
-===========================================
-File: src/algorithms/xex_fde.h
-===========================================
-
-// src/algorithms/xex_fde.h
-#ifndef XEX_FDE_H
-#define XEX_FDE_H
-
-#include <vector>
-#include <string>
-#include <cstdint> // Added to define uint8_t
-
-// Encrypt using XEX FDE
-std::vector<uint8_t> encrypt_fde(const std::vector<uint8_t>& key, const std::vector<uint8_t>& tweak, const std::vector<uint8_t>& input);
-
-// Decrypt using XEX FDE
-std::vector<uint8_t> decrypt_fde(const std::vector<uint8_t>& key, const std::vector<uint8_t>& tweak, const std::vector<uint8_t>& input);
-
-#endif // XEX_FDE_H
-
-
-===========================================
-File: src/math/galois.cpp
-===========================================
-
-// src/math/galois_fast.cpp
-#include "galois.h"
-#include <algorithm>
-#include <array>
-#include <stdexcept>
-#include <bitset>
-#include <cstring>
-#include <openssl/bn.h>
-#include "util/base64_utils.h"
-#include "util/helper_functions.h"
-#include <immintrin.h>
-
-
-FieldElement::FieldElement(const std::vector<uint8_t>& val, Semantic sem) {
-    __uint128_t aggregate = 0;
-    __uint128_t one = 1;
-    for(uint8_t x : val) {
-        aggregate |= (one << x);
-    }
-    this->value = aggregate;
-    this->semantic = sem;
-    this->skip_manipulation = true;
-}
-
-FieldElement::FieldElement(const std::string& block, Semantic sem) {
-    std::vector<uint8_t> bytes = base64_decode(block);
-    __uint128_t temp = bytes_to_uint128(bytes);
-    __uint128_t val = int_to_semantic(temp, sem);
-    this->value = val;
-    this->semantic = sem;
-    this->skip_manipulation = false;
-}
-
-
-FieldElement FieldElement::operator^(const FieldElement& other) const {
-    return {this->value ^ other.value, this->semantic, true};
-}
-
-FieldElement FieldElement::operator>>(int b) const {
-    return {this->value >> b, this->semantic, true};
-}
-
-FieldElement FieldElement::operator%(const __uint128_t& b) const {
-    return {this->value % b, this->semantic, true};
-}
-
-FieldElement FieldElement::operator%(const FieldElement& other) const {
-    return *this;
-}
-
-std::string FieldElement::bit_string() const {
-    return std::bitset<128>(value).to_string();
-}
-
-std::string FieldElement::to_block() const {
-
-    std::vector<uint8_t> bytes;
-
-    if(semantic == Semantic::GCM) {
-        __uint128_t reversed = reverse_bits(value);
-        bytes = int_to_bytes(reversed);
-        reverse_bytes_vector(bytes);
-    } else if(semantic == Semantic::XEX) {
-        bytes = int_to_bytes(value);
-    }
-
-    return base64_encode(bytes);
-}
-
-std::vector<uint8_t> FieldElement::to_polynomial() const {
-    std::vector<uint8_t> poly;
-    __uint128_t temp = value;
-    uint8_t position = 0;
-    while (temp != 0) {
-        if (temp & 1)
-            poly.push_back(position);
-        temp >>= 1;
-        ++position;
-    }
-    return poly;
-}
-
-bool FieldElement::is_zero() const {
-    return value == 0;
-}
-
-FieldElement FieldElement::operator+(const FieldElement& other) const {
-    return FieldElement(this->value ^ other.value, this->semantic, true);
-}
-
-FieldElement FieldElement::operator-(const FieldElement& other) const {
-    return *this + other; // same as addition in GF(2^n)
-}
-
-FieldElement FieldElement::operator*(const FieldElement& other) const {
-    __uint128_t a = this->value;
-    __uint128_t b = other.value;
-    __uint128_t result = 0;
-    __uint128_t modulus = 0x87; // x^128 + x^7 + x^2 + x + 1 represented as 0x87
-
-    for(int i=0; i<128; ++i){
-        if (b & 1){
-            result ^= a;
-        }
-        bool carry = (a & (__uint128_t(1) << 127)) != 0;
-        a <<= 1;
-        if (carry){
-            a ^= modulus;
-        }
-        b >>=1;
-    }
-    return {result, this->semantic, true};
-}
-
-FieldElement FieldElement::power(__uint128_t exponent) const {
-    FieldElement result(1, this->semantic, true);
-    FieldElement base = *this;
-    while(exponent > 0){
-        if (exponent & 1){
-            result = result * base;
-        }
-        base = base * base;
-        exponent >>=1;
-    }
-    return result;
-}
-
-FieldElement FieldElement::inverse() const {
-    if(this->is_zero()){
-        throw std::invalid_argument("Cannot invert zero element");
-    }
-    // Use Extended Euclidean Algorithm for GF(2^128)
-    // Placeholder: actual implementation needed
-    return *this; // Placeholder
-}
-
-===========================================
-File: src/math/galois.h
-===========================================
-
-// src/math/galois.h
-
-#ifndef GALOIS_FAST_H
-#define GALOIS_FAST_H
-
-#include <cstdint>
-#include <string>
-#include <vector>
-#include "util/semantic_types.h"
-
-class FieldElement {
-public:
-    __uint128_t value;
-    Semantic semantic;
-    bool skip_manipulation;
-
-    // Default constructor
-    FieldElement() 
-        : value(0), semantic(Semantic::GCM), skip_manipulation(false) {}
-
-    // Parameterized constructor
-    FieldElement(__uint128_t val, Semantic sem, bool skip = false)
-        : value(val), semantic(sem), skip_manipulation(skip) {}
-
-    // From Polynom
-    FieldElement(const std::vector<uint8_t>& val, Semantic sem);
-
-    // From Block
-    FieldElement(const std::string& block, Semantic sem);
-
-
-    // Copy and Move constructors (defaulted)
-    FieldElement(const FieldElement&) = default;
-    FieldElement(FieldElement&&) noexcept = default;
-
-    // **Add these lines to default the assignment operators**
-    FieldElement& operator=(const FieldElement&) = default;
-    FieldElement& operator=(FieldElement&&) noexcept = default;
-
-    // Operator overloads
-    FieldElement operator^(const FieldElement& other) const;
-    FieldElement operator>>(int b) const;
-    FieldElement operator%(const __uint128_t& b) const;
-    FieldElement operator%(const FieldElement& other) const;
-    std::string bit_string() const;
-    std::string to_block() const;
-    std::vector<uint8_t> to_polynomial() const;
-    bool is_zero() const;
-    FieldElement operator+(const FieldElement& other) const;
-    FieldElement operator-(const FieldElement& other) const;
-    FieldElement operator*(const FieldElement& other) const;
-    FieldElement power(__uint128_t exponent) const;
-    FieldElement inverse() const;
-
-private:
-    __uint128_t bitreverse(__uint128_t x) const;
-    __uint128_t bswap(__uint128_t x) const;
-};
-
-#endif // GALOIS_FAST_H
-
-
-===========================================
-File: src/math/polynom.cpp
-===========================================
-
-// src/math/polynom.cpp
-#include "polynom.h"
-#include <algorithm>
-#include <stdexcept>
-
-Polynomial::Polynomial(const std::vector<std::string>& coeffs, Semantic semantic_type){
-    coefficients.reserve(coeffs.size());
-    for(const auto& s : coeffs){
-        // Assume from_string to be a base64 decoder or similar
-        // Implement as needed
-        __uint128_t val = 0; // Placeholder
-        // Decode s to val (Implement base64 decoding)
-        // For example purposes, setting val to 0
-        coefficients.emplace_back(FieldElement(val, semantic_type, true));
-    }
-    power = coefficients.size();
-    reduce_pol();
-}
-
-bool Polynomial::is_zero() const {
-    return power == 0 || (power ==1 && coefficients[0].is_zero());
-}
-
-Polynomial Polynomial::reduce_pol() const {
-    Polynomial reduced = *this; // Create a copy
-    int new_power = reduced.power;
-    while(new_power > 0 && reduced.coefficients[new_power -1].value == 0){
-        new_power--;
-    }
-    reduced.power = new_power;
-    reduced.coefficients.resize(new_power);
-    if(reduced.power == 0){
-        reduced.coefficients.emplace_back(FieldElement(0, Semantic::GCM, true));
-    }
-    return reduced;
-}
-
-bool Polynomial::operator<(const Polynomial& other) const {
-    if(this->power < other.power){
-        return true;
-    }
-    if(this->power > other.power){
-        return false;
-    }
-    for(int i = power -1; i>=0; --i){
-        if(this->coefficients[i].value < other.coefficients[i].value){
-            return true;
-        }
-        if(other.coefficients[i].value < this->coefficients[i].value){
-            return false;
-        }
-    }
-    return false;
-}
-
-Polynomial Polynomial::operator+(const Polynomial& other) const {
-    int max_power = std::max(this->power, other.power);
-    std::vector<FieldElement> result_coeffs(max_power, FieldElement(0, Semantic::GCM, false));
-    for(int i=0; i<max_power; ++i){
-        FieldElement a = (i < this->power) ? this->coefficients[i] : FieldElement(0, Semantic::GCM, true);
-        FieldElement b = (i < other.power) ? other.coefficients[i] : FieldElement(0, Semantic::GCM, true);
-        result_coeffs[i] = a + b;
-    }
-    Polynomial result(result_coeffs);
-    return result.reduce_pol();
-}
-
-Polynomial Polynomial::operator-(const Polynomial& other) const {
-    return *this + other; // same as addition in GF(2^n)
-}
-
-Polynomial Polynomial::operator*(const Polynomial& other) const {
-    std::vector<FieldElement> result_coeffs(this->power + other.power -1, FieldElement(0, Semantic::GCM, true));
-    for(int i=0; i<this->power; ++i){
-        for(int j=0; j<other.power; ++j){
-            result_coeffs[i+j] = result_coeffs[i+j] + (this->coefficients[i] * other.coefficients[j]);
-        }
-    }
-    Polynomial result(result_coeffs);
-    return result.reduce_pol();
-}
-
-Polynomial Polynomial::operator^(int exponent) const {
-    if(exponent ==0){
-        return Polynomial({FieldElement(1, Semantic::GCM, true)});
-    }
-    Polynomial result({FieldElement(1, Semantic::GCM, true)});
-    Polynomial base = *this;
-    while(exponent >0){
-        if(exponent &1){
-            result = result * base;
-        }
-        base = base * base;
-        exponent >>=1;
-    }
-    return result.reduce_pol();
-}
-
-std::pair<Polynomial, Polynomial> Polynomial::divide(const Polynomial& divisor) const {
-    if(divisor.is_zero()){
-        throw std::invalid_argument("Division by zero polynomial");
-    }
-    Polynomial dividend = *this;
-    Polynomial quotient({FieldElement(0, Semantic::GCM, true)});
-    int quotient_degree = dividend.power - divisor.power;
-    if(quotient_degree <0){
-        return {quotient, dividend};
-    }
-    quotient.coefficients.resize(quotient_degree +1, FieldElement(0, Semantic::GCM, true));
-    while(dividend.power >= divisor.power && !dividend.is_zero()){
-        int shift = dividend.power - divisor.power;
-        FieldElement factor = dividend.coefficients[dividend.power -1] * divisor.coefficients[divisor.power -1].inverse();
-        quotient.coefficients[shift] = quotient.coefficients[shift] + factor;
-        // Subtract (divisor * factor * x^shift) from dividend
-        for(int i=0; i<divisor.power; ++i){
-            dividend.coefficients[i + shift] = dividend.coefficients[i + shift] - (divisor.coefficients[i] * factor);
-        }
-        dividend.reduce_pol();
-    }
-    quotient.reduce_pol();
-    return {quotient, dividend};
-}
-
-std::vector<std::string> Polynomial::repr() const {
-    std::vector<std::string> representation;
-    for(const auto& fe : coefficients){
-        representation.push_back(fe.to_block());
-    }
-    return representation;
-}
-
-Polynomial Polynomial::monic() const {
-    if(this->is_zero()){
-        throw std::invalid_argument("Cannot make zero polynomial monic");
-    }
-    FieldElement lead_coeff_inv = this->coefficients[this->power -1].inverse();
-    std::vector<FieldElement> new_coeffs = this->coefficients;
-    for(auto& coeff : new_coeffs){
-        coeff = coeff * lead_coeff_inv;
-    }
-    Polynomial result(new_coeffs);
-    return result.reduce_pol();
-}
-
-Polynomial Polynomial::diff() const {
-    std::vector<FieldElement> derivative_coeffs;
-    for(int i=1; i<this->power; ++i){
-        if(i %2 ==1){
-            derivative_coeffs.push_back(this->coefficients[i]);
-        }
-        else{
-            derivative_coeffs.emplace_back(FieldElement(0, Semantic::GCM, true));
-        }
-    }
-    Polynomial derivative(derivative_coeffs);
-    return derivative.reduce_pol();
-}
-
-
-Polynomial Polynomial::gcd(const Polynomial& other) const {
-    Polynomial a = this->reduce_pol();
-    Polynomial b = other.reduce_pol();
-    while(!b.is_zero()){
-        auto [q, r] = a.divide(b);
-        a = b;
-        b = r;
-    }
-    return a.monic();
-}
-
-===========================================
-File: src/math/polynom.h
-===========================================
-
-// src/math/polynom.h
-
-#ifndef POLYNOM_H
-#define POLYNOM_H
-
-#include <vector>
-#include <string>
-#include "galois.h"
-
-class Polynomial {
-public:
-    std::vector<FieldElement> coefficients;
-    int power;
-
-    Polynomial(const std::vector<FieldElement>& coeffs)
-        : coefficients(coeffs), power(coeffs.size()) {
-        reduce_pol();
-    }
-
-    Polynomial(const std::vector<std::string>& coeffs, Semantic semantic_type);
-
-    bool is_zero() const;
-
-    // Make reduce_pol a const method
-    Polynomial reduce_pol() const;
-
-    bool operator<(const Polynomial& other) const;
-
-    Polynomial operator+(const Polynomial& other) const;
-
-    Polynomial operator-(const Polynomial& other) const;
-
-    Polynomial operator*(const Polynomial& other) const;
-
-    Polynomial operator^(int exponent) const;
-
-    std::pair<Polynomial, Polynomial> divide(const Polynomial& divisor) const;
-
-    // Additional methods
-    std::vector<std::string> repr() const;
-    Polynomial monic() const;
-    Polynomial diff() const;
-    Polynomial gcd(const Polynomial& other) const;
-
-private:
-    // Helper methods
-};
-
-#endif // POLYNOM_H
-
 
 ===========================================
 File: src/util/base64_utils.cpp
@@ -1212,7 +227,20 @@ File: src/util/helper_functions.h
 #include <cstdint>
 #include <immintrin.h>
 #include <algorithm>
+#include <iostream>
 
+#include "lookup.h"
+
+
+inline std::string uint128_to_string(__uint128_t value) {
+    if (value == 0) return "0";
+    std::string result;
+    while (value > 0) {
+        result.insert(result.begin(), '0' + (value % 10));
+        value /= 10;
+    }
+    return result;
+}
 
 
 //idk. 1:1 von chatgpt
@@ -1248,7 +276,7 @@ inline __uint128_t reverse_bytes_int(__uint128_t value) {
 }
 
 
-uint64_t reverse_bits_64(uint64_t n) {
+inline uint64_t reverse_bits_64(uint64_t n) {
     n = ((n & 0xAAAAAAAAAAAAAAAA) >> 1) | ((n & 0x5555555555555555) << 1); // Swap adjacent bits
     n = ((n & 0xCCCCCCCCCCCCCCCC) >> 2) | ((n & 0x3333333333333333) << 2); // Swap pairs of bits
     n = ((n & 0xF0F0F0F0F0F0F0F0) >> 4) | ((n & 0x0F0F0F0F0F0F0F0F) << 4); // Swap nibbles (4 bits)
@@ -1261,11 +289,23 @@ uint64_t reverse_bits_64(uint64_t n) {
 
 
 inline __uint128_t reverse_bits(__uint128_t n) {
-    uint64_t high = static_cast<uint64_t>(n >> 64);
-    uint64_t low = static_cast<uint64_t>(n);
-    high = reverse_bits_64(high);
-    low = reverse_bits_64(low);
-    return (static_cast<__uint128_t>(low) << 64) | high;
+    // Define masks for swapping bits
+    const __uint128_t m1  = ((__uint128_t)0x5555555555555555ULL << 64) | 0x5555555555555555ULL;
+    const __uint128_t m2  = ((__uint128_t)0x3333333333333333ULL << 64) | 0x3333333333333333ULL;
+    const __uint128_t m4  = ((__uint128_t)0x0F0F0F0F0F0F0F0FULL << 64) | 0x0F0F0F0F0F0F0F0FULL;
+    const __uint128_t m8  = ((__uint128_t)0x00FF00FF00FF00FFULL << 64) | 0x00FF00FF00FF00FFULL;
+    const __uint128_t m16 = ((__uint128_t)0x0000FFFF0000FFFFULL << 64) | 0x0000FFFF0000FFFFULL;
+    const __uint128_t m32 = ((__uint128_t)0x00000000FFFFFFFFULL << 64) | 0x00000000FFFFFFFFULL;
+
+    // Swap bits in progressively larger groups
+    n = ((n >> 1) & m1)  | ((n & m1)  << 1);
+    n = ((n >> 2) & m2)  | ((n & m2)  << 2);
+    n = ((n >> 4) & m4)  | ((n & m4)  << 4);
+    n = ((n >> 8) & m8)  | ((n & m8)  << 8);
+    n = ((n >> 16) & m16)| ((n & m16) << 16);
+    n = ((n >> 32) & m32)| ((n & m32) << 32);
+    n = (n >> 64)        | (n << 64);
+    return n;
 }
 
 
@@ -1292,34 +332,22 @@ File: src/util/lookup.h
 #define LOOKUP_H
 
 
+constexpr std::array<uint8_t, 256> bitReverseTable = []{
+    std::array<uint8_t, 256> table = {};
+    for (uint16_t i = 0; i < 256; ++i) {
+        uint8_t v = i;
+        v = ((v & 0xF0) >> 4) | ((v & 0x0F) << 4);
+        v = ((v & 0xCC) >> 2) | ((v & 0x33) << 2);
+        v = ((v & 0xAA) >> 1) | ((v & 0x55) << 1);
+        table[i] = v;
+    }
+    return table;
+}();
+
 
 
 #endif //LOOKUP_H
 
-
-===========================================
-File: src/util/my_Stuff.txt
-===========================================
-
-uint64_t reverse_bits_64_functioning(uint64_t n) {
-    n = (n >> 1) & 0x5555555555555555ULL | (n & 0x5555555555555555ULL) << 1;
-    n = (n >> 2) & 0x3333333333333333ULL | (n & 0x3333333333333333ULL) << 2;
-    n = (n >> 4) & 0x0F0F0F0F0F0F0F0FULL | (n & 0x0F0F0F0F0F0F0F0FULL) << 4;
-    n = (n >> 8) & 0x00FF00FF00FF00FFULL | (n & 0x00FF00FF00FF00FFULL) << 8;
-    n = (n >> 16) & 0x0000FFFF0000FFFFULL | (n & 0x0000FFFF0000FFFFULL) << 16;
-    n = (n >> 32) | (n << 32);
-    return n;
-}
-
-
-
-inline std::vector<uint8_t> int_to_bytes_functioning(unsigned __int128 value) {
-    std::vector<uint8_t> bytes(16);
-    for (int i = 0; i < 16; ++i) {
-        bytes[i] = static_cast<uint8_t>(value >> (i * 8));
-    }
-    return bytes;
-}
 
 ===========================================
 File: src/util/processor.cpp
@@ -1377,6 +405,7 @@ json gfmul(const json& arguments){
     // Convert to FieldElement
     FieldElement a(a_str, semantic);
     FieldElement b(b_str, semantic);
+
     FieldElement product = a * b;
 
     return product.to_block();
@@ -1442,47 +471,38 @@ json padding_oracle_attack(const json& arguments){
     return plaintext_b64;
 }
 
-json gcm_crypt(const json& arguments, bool encrypt){
+json gcm_crypt_process(const json& arguments, bool encrypt){
     std::string algorithm = arguments["algorithm"].get<std::string>();
     std::string nonce_str = arguments["nonce"].get<std::string>();
     std::string key_str = arguments["key"].get<std::string>();
     std::string ad_str = arguments["ad"].get<std::string>();
 
-    // Decode base64
     std::vector<uint8_t> key = base64_decode(key_str);
     std::vector<uint8_t> ad = base64_decode(ad_str);
     std::vector<uint8_t> nonce = base64_decode(nonce_str);
 
     if(encrypt){
         std::string plaintext_str = arguments["plaintext"].get<std::string>();
-        // Decode plaintext
         std::vector<uint8_t> plaintext = base64_decode(plaintext_str);
         auto [ciphertext, tag, L, H] = encrypt_gcm(key, plaintext, ad, nonce, algorithm);
-        // Encode ciphertext and tag to base64
-        std::string ciphertext_b64 = base64_encode(ciphertext);
-        std::string tag_b64 = base64_encode(tag);
-        return {ciphertext_b64, tag_b64, "L_placeholder", "H_placeholder"};
+        return {base64_encode(ciphertext), tag.to_block(), base64_encode(L), H.to_block()};
     }
     else{
         std::string ciphertext_str = arguments["ciphertext"].get<std::string>();
         std::string tag_str = arguments["tag"].get<std::string>();
-        // Decode ciphertext and tag
         std::vector<uint8_t> ciphertext = base64_decode(ciphertext_str);
-        std::vector<uint8_t> tag = base64_decode(tag_str);
-        auto [plaintext, len_block, auth_key] = decrypt_gcm(key, ciphertext, ad, nonce, algorithm);
-        // Encode plaintext to base64
-        std::string plaintext_b64 = base64_encode(plaintext);
-        bool authentic = true; // Placeholder: Compare tags
-        return {authentic, plaintext_b64};
+        auto [plaintext, auth_tag, len_block, auth_key] = decrypt_gcm(key, ciphertext, ad, nonce, algorithm);
+
+        return {auth_tag == tag_str, base64_encode(plaintext)};
     }
 }
 
 json gcm_encrypt(const json& arguments){
-    return gcm_crypt(arguments, true);
+    return gcm_crypt_process(arguments, true);
 }
 
 json gcm_decrypt(const json& arguments){
-    return gcm_crypt(arguments, false);
+    return gcm_crypt_process(arguments, false);
 }
 
 
@@ -1522,13 +542,10 @@ json gfdiv(const json& arguments){
     std::string a_str = arguments["a"].get<std::string>();
     std::string b_str = arguments["b"].get<std::string>();
 
-    // Decode a and b
-    __uint128_t a_val = 0; // Placeholder: Decode a_str
-    __uint128_t b_val = 0; // Placeholder: Decode b_str
 
-    FieldElement a(a_val, Semantic::GCM, true);
-    FieldElement b(b_val, Semantic::GCM, true);
-    FieldElement c = a % b; // Implement division
+    FieldElement a(a_str, Semantic::GCM);
+    FieldElement b(b_str, Semantic::GCM);
+    FieldElement c = a / b; // Implement division
 
     return c.to_block();
 }
@@ -1554,7 +571,7 @@ json polynomial_powmod(const json& arguments){
 
     // Implement gfpoly_powmod
     // Placeholder:
-    Polynomial result = poly_A ^ k; // Replace with actual powmod
+    Polynomial result = poly_A.gfpoly_powmod(poly_M, k);
     return result.repr();
 }
 
@@ -1582,9 +599,7 @@ json polynomial_make_monic(const json& arguments){
 json polynomial_sqrt(const json& arguments){
     std::vector<std::string> Q = arguments["Q"].get<std::vector<std::string>>();
     Polynomial poly_Q(Q, Semantic::GCM);
-    // Implement sqrt
-    // Placeholder:
-    Polynomial sqrt_poly = poly_Q; // Replace with actual sqrt
+    Polynomial sqrt_poly = poly_Q.sqrt();
     return sqrt_poly.repr();
 }
 
@@ -1633,7 +648,7 @@ std::unordered_map<std::string, Action> ACTIONS{
     std::pair<std::string, Action>{"gfpoly_gcd", Action{polynomial_gcd, {"G"}}}
 };
 
-json process(const json& jsonContent, bool alt){
+json process(const json& jsonContent){
     json result_testcases;
 
     for(auto& [key, value] : jsonContent["testcases"].items()){
@@ -1641,6 +656,7 @@ json process(const json& jsonContent, bool alt){
         json arguments = value["arguments"];
 
         if(ACTIONS.find(action) == ACTIONS.end()){
+            std::cerr << "Action '" << action << "' not found" << std::endl;
             continue;
         }
 
@@ -1667,13 +683,7 @@ json process(const json& jsonContent, bool alt){
         result_testcases[key] = json_result;
     }
 
-    if(alt){
-        return {{"responses", result_testcases}};
-    }
-    else{
-        std::cout << result_testcases.dump(3) << std::endl;
-        return {};
-    }
+    return {{"responses", result_testcases}};
 }
 
 
@@ -1693,7 +703,7 @@ File: src/util/processor.h
 using json = nlohmann::json;
 
 // Function to process JSON content
-json process(const json& jsonContent, bool alt = false);
+json process(const json& jsonContent);
 
 #endif // PROCESSOR_H
 
@@ -1720,3 +730,1032 @@ inline Semantic from_string(const std::string& s) {
 }
 
 #endif
+
+===========================================
+File: src/math/galois.cpp
+===========================================
+
+// src/math/galois_fast.cpp
+#include "galois.h"
+#include <algorithm>
+#include <array>
+#include <stdexcept>
+#include <bitset>
+#include <complex>
+#include <cstring>
+#include <openssl/bn.h>
+#include "util/base64_utils.h"
+#include "util/helper_functions.h"
+#include <immintrin.h>
+
+
+FieldElement::FieldElement(unsigned __int128 val, Semantic sem, bool skip) {
+    if (skip) {
+        this->value = val;
+        this->semantic = sem;
+        this->skip_manipulation = true;
+    } else {
+        this->value = int_to_semantic(val, sem);
+        this->semantic = sem;
+        this->skip_manipulation = false;
+    }
+}
+
+FieldElement::FieldElement(const std::vector<uint8_t>& val, Semantic sem) {
+    __uint128_t aggregate = 0;
+    __uint128_t one = 1;
+    for(uint8_t x : val) {
+        aggregate |= (one << x);
+    }
+    this->value = aggregate;
+    this->semantic = sem;
+    this->skip_manipulation = true;
+}
+
+FieldElement::FieldElement(const std::string& block, Semantic sem) {
+    std::vector<uint8_t> bytes = base64_decode(block);
+    __uint128_t temp = bytes_to_uint128(bytes);
+    __uint128_t val = int_to_semantic(temp, sem);
+    this->value = val;
+    this->semantic = sem;
+    this->skip_manipulation = false;
+}
+
+
+FieldElement FieldElement::operator^(const __uint128_t& power) const {
+    FieldElement result(1, this->semantic, true);
+    __uint128_t base = this->value;
+    __uint128_t exponent = power;
+
+    for(int i=0; i<128; ++i){
+        if(exponent & 1) {
+            result = result * base;
+        }
+        result = result * result;
+        exponent >>=1;
+    }
+    return result;
+}
+
+FieldElement FieldElement::operator>>(int b) const {
+    return {this->value >> b, this->semantic, true};
+}
+
+FieldElement FieldElement::operator%(const __uint128_t& b) const {
+    return {this->value % b, this->semantic, true};
+}
+
+FieldElement FieldElement::operator/(const FieldElement& other) const { // TODO: Implement this
+    return *this * other.inverse();
+}
+
+FieldElement FieldElement::operator%(const FieldElement& other) const {
+    return *this;
+}
+
+
+FieldElement FieldElement::sqrt() const {
+    if (this->is_zero()) {
+        return *this; // Square root of 0 is 0
+    }
+
+    // Check if the value is in a valid field for sqrt operation
+    if (this->semantic != Semantic::GCM) {
+        throw std::invalid_argument("Square root is only supported in GCM semantic.");
+    }
+
+    // In GF(2^n), the square root operation is equivalent to raising the element to the power of 2^(n-1)
+    // For GCM, n = 128, so sqrt(a) = a^(2^(128 - 1))
+    __uint128_t sqrt_exponent = (__uint128_t(1) << 127);
+
+    return this->power(sqrt_exponent);
+}
+
+std::string FieldElement::bit_string() const {
+    return std::bitset<128>(value).to_string();
+}
+
+std::string FieldElement::to_block() const {
+
+    std::vector<uint8_t> bytes;
+
+    if(semantic == Semantic::GCM) {
+        __uint128_t reversed = reverse_bits(value);
+        bytes = int_to_bytes(reversed);
+        reverse_bytes_vector(bytes);
+    } else if(semantic == Semantic::XEX) {
+        bytes = int_to_bytes(value);
+    }
+
+    return base64_encode(bytes);
+}
+
+std::vector<uint8_t> FieldElement::to_polynomial() const {
+    std::vector<uint8_t> poly;
+    __uint128_t temp = value;
+    uint8_t position = 0;
+    while (temp != 0) {
+        if (temp & 1)
+            poly.push_back(position);
+        temp >>= 1;
+        ++position;
+    }
+    return poly;
+}
+
+std::vector<uint8_t> FieldElement::to_vector() const {
+    return int_to_bytes(value);
+}
+
+bool FieldElement::is_zero() const {
+    return value == 0;
+}
+
+FieldElement FieldElement::operator+(const FieldElement& other) const {
+    return {this->value ^ other.value, this->semantic, true};
+}
+
+FieldElement FieldElement::operator+(const std::vector<uint8_t>& other) const {
+    return {this->value ^ int_to_semantic(bytes_to_uint128(other), this->semantic), this->semantic, true};
+}
+
+FieldElement FieldElement::operator-(const FieldElement& other) const {
+    return *this + other; // same as addition in GF(2^n)
+}
+
+FieldElement FieldElement::operator*(const FieldElement& other) const {
+    return *this * other.value;
+}
+
+FieldElement FieldElement::operator*(const __uint128_t& other) const {
+    __uint128_t a = this->value;
+    __uint128_t b = other;
+    __uint128_t result = 0;
+    __uint128_t modulus = 0x87; // x^128 + x^7 + x^2 + x + 1 represented as 0x87
+
+    for(int i=0; i<128; ++i){
+        if (b & 1){
+            result ^= a;
+        }
+        bool carry = (a & (__uint128_t(1) << 127)) != 0;
+        a <<= 1;
+        if (carry){
+            a ^= modulus;
+        }
+        b >>=1;
+    }
+    return {result, this->semantic, true};
+}
+
+FieldElement FieldElement::power(__uint128_t exponent) const {
+    FieldElement result(1, this->semantic, true);
+    FieldElement base = *this;
+    while(exponent > 0){
+        if (exponent & 1){
+            result = result * base;
+        }
+        base = base * base;
+        exponent >>=1;
+    }
+    return result;
+}
+
+FieldElement FieldElement::inverse() const {
+    if(this->is_zero()){
+        throw std::invalid_argument("Cannot invert zero element");
+    }
+
+    __uint128_t exponent = 0;
+    exponent = ~exponent;
+    exponent -= 1;
+
+
+    return *this ^ exponent; // Placeholder
+}
+
+===========================================
+File: src/math/galois.h
+===========================================
+
+// src/math/galois.h
+
+#ifndef GALOIS_FAST_H
+#define GALOIS_FAST_H
+
+#include <cstdint>
+#include <string>
+#include <vector>
+#include "util/semantic_types.h"
+
+class FieldElement {
+public:
+    __uint128_t value;
+    Semantic semantic;
+    bool skip_manipulation;
+
+    // Default constructor
+    FieldElement() 
+        : value(0), semantic(Semantic::GCM), skip_manipulation(false) {}
+
+    // Parameterized constructor
+    FieldElement(__uint128_t val, Semantic sem, bool skip = false);
+
+    FieldElement(const std::vector<uint8_t>& val, Semantic sem);
+    FieldElement(const std::string& block, Semantic sem);
+
+
+    FieldElement(const FieldElement&) = default;
+    FieldElement(FieldElement&&) noexcept = default;
+
+    FieldElement& operator=(const FieldElement&) = default;
+    FieldElement& operator=(FieldElement&&) noexcept = default;
+    FieldElement operator^(const __uint128_t& other) const;
+    FieldElement operator>>(int b) const;
+    FieldElement operator/(const FieldElement& other) const;
+    FieldElement operator%(const __uint128_t& b) const;
+    FieldElement operator%(const FieldElement& other) const;
+    FieldElement operator+(const FieldElement& other) const;
+    FieldElement operator+(const std::vector<uint8_t> &other) const;
+    FieldElement operator-(const FieldElement& other) const;
+    FieldElement operator*(const FieldElement& other) const;
+    FieldElement operator*(const __uint128_t& other) const;
+
+
+    [[nodiscard]] std::string bit_string() const;
+    [[nodiscard]] std::string to_block() const;
+    [[nodiscard]] std::vector<uint8_t> to_polynomial() const;
+    [[nodiscard]] bool is_zero() const;
+    [[nodiscard]] std::vector<uint8_t> to_vector() const;
+    [[nodiscard]] FieldElement power(__uint128_t exponent) const;
+    [[nodiscard]] FieldElement inverse() const;
+    [[nodiscard]] FieldElement sqrt() const;
+};
+
+#endif // GALOIS_FAST_H
+
+
+===========================================
+File: src/math/polynom.cpp
+===========================================
+
+// src/math/polynom.cpp
+#include "polynom.h"
+#include <algorithm>
+#include <stdexcept>
+
+Polynomial::Polynomial(const std::vector<std::string>& coeffs, Semantic semantic_type){
+    coefficients.reserve(coeffs.size());
+    for(const auto& s : coeffs){
+        coefficients.emplace_back(FieldElement(s, semantic_type));
+    }
+    power = coefficients.size();
+    reduce_pol();
+}
+
+bool Polynomial::is_zero() const {
+    return power == 0 || (power ==1 && coefficients[0].is_zero());
+}
+
+Polynomial Polynomial::reduce_pol() const {
+    Polynomial reduced = *this; // Create a copy
+    int new_power = reduced.power;
+    while(new_power > 0 && reduced.coefficients[new_power -1].value == 0){
+        new_power--;
+    }
+    reduced.power = new_power;
+    reduced.coefficients.resize(new_power);
+    if(reduced.power == 0){
+        reduced.coefficients.emplace_back(FieldElement(0, Semantic::GCM, true));
+    }
+    return reduced;
+}
+
+bool Polynomial::operator<(const Polynomial& other) const {
+    if(this->power < other.power){
+        return true;
+    }
+    if(this->power > other.power){
+        return false;
+    }
+    for(int i = power -1; i>=0; --i){
+        if(this->coefficients[i].value < other.coefficients[i].value){
+            return true;
+        }
+        if(other.coefficients[i].value < this->coefficients[i].value){
+            return false;
+        }
+    }
+    return false;
+}
+
+Polynomial Polynomial::operator+(const Polynomial& other) const {
+    int max_power = std::max(this->power, other.power);
+    std::vector<FieldElement> result_coeffs(max_power, FieldElement(0, Semantic::GCM, false));
+    for(int i=0; i<max_power; ++i){
+        FieldElement a = (i < this->power) ? this->coefficients[i] : FieldElement(0, Semantic::GCM, true);
+        FieldElement b = (i < other.power) ? other.coefficients[i] : FieldElement(0, Semantic::GCM, true);
+        result_coeffs[i] = a + b;
+    }
+    Polynomial result(result_coeffs);
+    return result.reduce_pol();
+}
+
+Polynomial Polynomial::operator-(const Polynomial& other) const {
+    return *this + other; // same as addition in GF(2^n)
+}
+
+Polynomial Polynomial::operator*(const Polynomial& other) const {
+    std::vector<FieldElement> result_coeffs(this->power + other.power -1, FieldElement(0, Semantic::GCM, true));
+    for(int i=0; i<this->power; ++i){
+        for(int j=0; j<other.power; ++j){
+            result_coeffs[i+j] = result_coeffs[i+j] + (this->coefficients[i] * other.coefficients[j]);
+        }
+    }
+    Polynomial result(result_coeffs);
+    return result.reduce_pol();
+}
+
+Polynomial Polynomial::operator^(int exponent) const {
+    if(exponent ==0){
+        return Polynomial({FieldElement(1, Semantic::GCM, true)});
+    }
+    Polynomial result({FieldElement(1, Semantic::GCM, true)});
+    Polynomial base = *this;
+    while(exponent >0){
+        if(exponent &1){
+            result = result * base;
+        }
+        base = base * base;
+        exponent >>=1;
+    }
+    return result.reduce_pol();
+}
+
+std::pair<Polynomial, Polynomial> Polynomial::divide(const Polynomial& divisor) const {
+    if(divisor.is_zero()){
+        throw std::invalid_argument("Division by zero polynomial");
+    }
+
+    Polynomial dividend = this->reduce_pol();
+    Polynomial divisor_reduced = divisor.reduce_pol();
+
+    if(dividend.power < divisor_reduced.power){
+        Polynomial quotient({FieldElement(0, Semantic::GCM, true)});
+        return {quotient, dividend};
+    }
+
+    int quotient_degree = dividend.power - divisor_reduced.power;
+    std::vector<FieldElement> quotient_coeffs(quotient_degree +1, FieldElement(0, Semantic::GCM, true));
+
+    std::vector<FieldElement> remainder_coeffs = dividend.coefficients;
+    int remainder_degree = dividend.power;
+
+    FieldElement divisor_lead = divisor_reduced.coefficients[divisor_reduced.power -1];
+    FieldElement divisor_inv = divisor_lead.inverse();
+
+    while(remainder_degree >= divisor_reduced.power){
+        FieldElement lead_coeff_rem = remainder_coeffs[remainder_degree -1];
+        FieldElement factor = lead_coeff_rem * divisor_inv;
+        int degree_diff = remainder_degree - divisor_reduced.power;
+        quotient_coeffs[degree_diff] = quotient_coeffs[degree_diff] + factor;
+
+        for(int i=0; i< divisor_reduced.power; ++i){
+            int j = i + degree_diff;
+            remainder_coeffs[j] = remainder_coeffs[j] - (divisor_reduced.coefficients[i] * factor);
+        }
+
+        while(remainder_degree >0 && remainder_coeffs[remainder_degree -1].is_zero()){
+            remainder_degree--;
+        }
+
+        if(remainder_degree ==0){
+            break;
+        }
+    }
+
+    Polynomial quotient(quotient_coeffs);
+    quotient = quotient.reduce_pol();
+
+    std::vector<FieldElement> remainder_final_coeffs(remainder_coeffs.begin(), remainder_coeffs.begin() + remainder_degree);
+    Polynomial remainder(remainder_final_coeffs);
+    remainder = remainder.reduce_pol();
+
+    return {quotient, remainder};
+}
+
+
+std::vector<std::string> Polynomial::repr() const {
+    std::vector<std::string> representation;
+    for(const auto& fe : coefficients){
+        representation.push_back(fe.to_block());
+    }
+    return representation;
+}
+
+Polynomial Polynomial::monic() const {
+    if(this->is_zero()){
+        throw std::invalid_argument("Cannot make zero polynomial monic");
+    }
+    FieldElement lead_coeff_inv = this->coefficients[this->power -1].inverse();
+    std::vector<FieldElement> new_coeffs = this->coefficients;
+    for(auto& coeff : new_coeffs){
+        coeff = coeff * lead_coeff_inv;
+    }
+    Polynomial result(new_coeffs);
+    return result.reduce_pol();
+}
+
+Polynomial Polynomial::diff() const {
+    std::vector<FieldElement> derivative_coeffs;
+    for(int i=1; i<this->power; ++i){
+        if(i %2 ==1){
+            derivative_coeffs.push_back(this->coefficients[i]);
+        }
+        else{
+            derivative_coeffs.emplace_back(FieldElement(0, Semantic::GCM, true));
+        }
+    }
+    Polynomial derivative(derivative_coeffs);
+    return derivative.reduce_pol();
+}
+
+
+Polynomial Polynomial::gcd(const Polynomial& other) const {
+    Polynomial a = this->reduce_pol();
+    Polynomial b = other.reduce_pol();
+    while(!b.is_zero()){
+        auto [q, r] = a.divide(b);
+        a = b;
+        b = r;
+    }
+    return a.monic();
+}
+
+
+Polynomial Polynomial::gfpoly_powmod(const Polynomial& M, int k) const {
+    if (k < 0) {
+        throw std::invalid_argument("Exponent must be non-negative");
+    }
+
+    Polynomial one_fe({FieldElement(1, Semantic::GCM, true)});
+    Polynomial result = one_fe;
+
+    // Perform modular reduction on *this
+    auto [_, base] = this->divide(M);
+
+    while (k > 0) {
+        if (k & 1) {
+            // result = (result * base) % M
+            auto [tmp_q, tmp_r] = (result * base).divide(M);
+            result = tmp_r;
+        }
+        // base = (base * base) % M
+        auto [tmp_q, tmp_r] = (base * base).divide(M);
+        base = tmp_r;
+
+        k >>= 1; // Divide k by 2
+    }
+
+    return result;
+}
+
+
+Polynomial Polynomial::sqrt() const {
+    // Validate that the polynomial has only even exponents with non-zero coefficients
+    for (int i = 0; i < power; ++i) {
+        if ((i % 2 == 1) && !coefficients[i].is_zero()) {
+            throw std::invalid_argument("Polynomial must have only even exponents with non-zero coefficients.");
+        }
+    }
+
+    // Determine the degree of the resulting square root polynomial
+    int m = power / 2;
+    std::vector<FieldElement> S_coeffs(m + 1);
+
+    // Compute the coefficients of the square root polynomial
+    for (int i = 0; i <= m; ++i) {
+        FieldElement q_2i = coefficients[2 * i];
+        S_coeffs[i] = q_2i.sqrt(); // Ensure FieldElement has a sqrt() method implemented
+    }
+
+    // Create and return the reduced polynomial
+    Polynomial S(S_coeffs);
+    return S.reduce_pol();
+}
+
+
+===========================================
+File: src/math/polynom.h
+===========================================
+
+// src/math/polynom.h
+
+#ifndef POLYNOM_H
+#define POLYNOM_H
+
+#include <vector>
+#include <string>
+#include "galois.h"
+
+class Polynomial {
+public:
+    std::vector<FieldElement> coefficients;
+    int power;
+
+    Polynomial(const std::vector<FieldElement>& coeffs)
+        : coefficients(coeffs), power(coeffs.size()) {
+        reduce_pol();
+    }
+
+    Polynomial(const std::vector<std::string>& coeffs, Semantic semantic_type);
+
+    [[nodiscard]] bool is_zero() const;
+
+    // Make reduce_pol a const method
+    [[nodiscard]] Polynomial reduce_pol() const;
+
+    bool operator<(const Polynomial& other) const;
+
+    Polynomial operator+(const Polynomial& other) const;
+
+    Polynomial operator-(const Polynomial& other) const;
+
+    Polynomial operator*(const Polynomial& other) const;
+
+    Polynomial operator^(int exponent) const;
+
+    [[nodiscard]] std::pair<Polynomial, Polynomial> divide(const Polynomial& divisor) const;
+
+    // Additional methods
+    [[nodiscard]] std::vector<std::string> repr() const;
+    [[nodiscard]] Polynomial monic() const;
+    [[nodiscard]] Polynomial diff() const;
+    [[nodiscard]] Polynomial gcd(const Polynomial& other) const;
+    [[nodiscard]] Polynomial gfpoly_powmod(const Polynomial& M, int k) const;
+    [[nodiscard]] Polynomial sqrt() const;
+private:
+    // Helper methods
+};
+
+#endif // POLYNOM_H
+
+
+===========================================
+File: src/algorithms/gcm.cpp
+===========================================
+
+// src/algorithms/gcm.cpp
+#include "gcm.h"
+#include "../util/semantic_types.h"
+#include "../util/helper_functions.h"
+#include "../math/galois.h"
+#include "../algorithms/sea128.h"
+#include <vector>
+#include <cstdint>
+#include <stdexcept>
+#include <tuple>
+#include <algorithm>
+
+#include <functional>
+
+
+std::vector<uint8_t> pad_array(const std::vector<uint8_t>& arr) {
+    size_t pad_len = (16 - (arr.size() % 16)) % 16;
+    std::vector<uint8_t> padded = arr;
+    padded.resize(arr.size() + pad_len, 0);
+    return padded;
+}
+
+
+std::tuple<FieldElement, std::vector<uint8_t>, FieldElement> ghash(
+    const std::vector<uint8_t>& key,
+    const std::vector<uint8_t>& nonce,
+    const std::vector<uint8_t>& text,
+    const std::vector<uint8_t>& ad,
+    const std::string& algorithm) {
+
+    std::function<std::vector<uint8_t>(const std::vector<uint8_t>&, const std::vector<uint8_t>&)> enc_func;
+    enc_func = algorithm == "aes128" ? aes_encrypt : encrypt_sea;
+
+    std::vector<uint8_t> zero_block(16, 0);
+    std::vector<uint8_t> encrypted_zero = enc_func(key, zero_block);
+    __uint128_t auth_key_int = bytes_to_uint128(encrypted_zero);
+    FieldElement auth_key(auth_key_int, Semantic::GCM, false);
+
+    uint64_t ad_bit_len = static_cast<uint64_t>(ad.size()) * 8;
+    uint64_t text_bit_len = static_cast<uint64_t>(text.size()) * 8;
+
+    // Convert to big endian bytes
+    std::vector<uint8_t> len_block(16, 0);
+    for(int i = 0; i < 8; ++i){
+        len_block[15 - i] = (text_bit_len >> (i * 8)) & 0xFF;
+        len_block[7 - i] = (ad_bit_len >> (i * 8)) & 0xFF;
+    }
+
+    std::vector<uint8_t> padded_ad = pad_array(ad);
+    std::vector<uint8_t> padded_text = pad_array(text);
+
+
+    // Concatenate padded AD, padded text, and len_block
+    std::vector<uint8_t> data;
+    data.reserve(padded_ad.size() + padded_text.size() + len_block.size());
+    data.insert(data.end(), padded_ad.begin(), padded_ad.end());
+    data.insert(data.end(), padded_text.begin(), padded_text.end());
+    data.insert(data.end(), len_block.begin(), len_block.end());
+
+    // Initialize Y as zero
+    FieldElement Y(0, Semantic::GCM, false);
+
+    // Iterate over each 16-byte block
+    for(size_t i = 0; i < data.size(); i += 16){
+        std::vector<uint8_t> block(data.begin() + i, data.begin() + i + 16);
+        __uint128_t block_int = bytes_to_uint128(block);
+        FieldElement block_fe(block_int, Semantic::GCM, false);
+        Y = Y + block_fe;
+        Y = Y * auth_key;
+    }
+
+    std::vector<uint8_t> ctr_block = nonce;
+    if(nonce.size() != 12){
+        throw std::invalid_argument("Nonce must be 12 bytes for GCM.");
+    }
+    ctr_block.insert(ctr_block.end(), {0, 0, 0, 1}); // TODO: Fix this
+    std::vector<uint8_t> S = enc_func(key, ctr_block);
+
+    // Convert tag_int to bytes
+    FieldElement tag = Y + S;
+
+    return {tag, len_block, auth_key};
+}
+
+std::vector<uint8_t> crypt_gcm(
+        const std::vector<uint8_t>& key,
+        const std::vector<uint8_t>& text,
+        const std::vector<uint8_t>& nonce,
+        const std::string& algorithm) {
+    std::vector<uint8_t> result_text;
+
+
+    std::function<std::vector<uint8_t>(const std::vector<uint8_t>&, const std::vector<uint8_t>&)> enc_func;
+    enc_func = algorithm == "aes128" ? aes_encrypt : encrypt_sea;
+
+    uint32_t counter = 2;
+    for (size_t i = 0; i < text.size(); i += 16) {
+        std::vector<uint8_t> temp_nonce = nonce;
+        temp_nonce.push_back((counter >> 24) & 0xFF);
+        temp_nonce.push_back((counter >> 16) & 0xFF);
+        temp_nonce.push_back((counter >> 8) & 0xFF);
+        temp_nonce.push_back(counter & 0xFF);
+        std::vector<uint8_t> enc_ctr = enc_func(key, temp_nonce);
+
+        std::vector<uint8_t> block(text.begin() + i, text.begin() + std::min(i + 16, text.size()));
+        std::vector<uint8_t> encrypted = enc_func(key, block);
+        // XOR with encrypted counter block
+        for (size_t j = 0; j < encrypted.size(); ++j) {
+            encrypted[j] = enc_ctr[j] ^ block[j];
+        }
+        result_text.insert(result_text.end(), encrypted.begin(), encrypted.end());
+        counter++;
+    }
+
+    return result_text;
+}
+
+
+std::tuple<std::vector<uint8_t>, FieldElement, std::vector<uint8_t>, FieldElement> encrypt_gcm(
+        const std::vector<uint8_t>& key,
+        const std::vector<uint8_t>& plaintext,
+        const std::vector<uint8_t>& ad,
+        const std::vector<uint8_t>& nonce,
+        const std::string& algorithm) {
+
+    auto cipertext = crypt_gcm(key, plaintext, nonce, algorithm);
+    auto [auth_tag, len_block, auth_key] = ghash(key, nonce, cipertext, ad, algorithm);
+
+    return {cipertext, auth_tag, len_block, auth_key};
+}
+
+
+std::tuple<std::vector<uint8_t>, std::string, std::vector<uint8_t>, std::vector<uint8_t>> decrypt_gcm(
+        const std::vector<uint8_t>& key,
+        const std::vector<uint8_t>& ciphertext,
+        const std::vector<uint8_t>& ad,
+        const std::vector<uint8_t>& nonce,
+        const std::string& algorithm) {
+
+    auto [auth_tag, len_block, auth_key] = ghash(key, nonce, ciphertext, ad, algorithm);
+    auto plaintext = crypt_gcm(key, ciphertext, nonce, algorithm);
+
+    return {plaintext, auth_tag.to_block(), len_block, auth_key.to_vector()};
+}
+
+===========================================
+File: src/algorithms/gcm.h
+===========================================
+
+// src/algorithms/gcm.h
+#ifndef GCM_H
+#define GCM_H
+
+#include <vector>
+#include <string>
+#include <cstdint>
+#include <tuple>
+
+#include "math/galois.h"
+
+
+
+
+std::tuple<std::vector<uint8_t>, std::string, std::vector<uint8_t>, std::vector<uint8_t>> decrypt_gcm(
+        const std::vector<uint8_t>& key,
+        const std::vector<uint8_t>& ciphertext,
+        const std::vector<uint8_t>& ad,
+        const std::vector<uint8_t>& nonce,
+        const std::string& algorithm);
+
+std::tuple<std::vector<uint8_t>, FieldElement, std::vector<uint8_t>, FieldElement> encrypt_gcm(
+        const std::vector<uint8_t>& key,
+        const std::vector<uint8_t>& plaintext,
+        const std::vector<uint8_t>& ad,
+        const std::vector<uint8_t>& nonce,
+        const std::string& algorithm);
+
+std::vector<uint8_t> crypt_gcm(
+        const std::vector<uint8_t>& key,
+        const std::vector<uint8_t>& text,
+        const std::vector<uint8_t>& nonce,
+        const std::string& algorithm);
+
+std::tuple<FieldElement, std::vector<uint8_t>, FieldElement> ghash(
+    const std::vector<uint8_t>& key,
+    const std::vector<uint8_t>& nonce,
+    const std::vector<uint8_t>& text,
+    const std::vector<uint8_t>& ad,
+    const std::string& algorithm);
+
+
+std::vector<uint8_t> pad_array(const std::vector<uint8_t>& arr);
+
+#endif // GCM_H
+
+
+===========================================
+File: src/algorithms/padding_oracle.cpp
+===========================================
+
+// src/algorithms/padding_oracle.cpp
+#include "padding_oracle.h"
+#include <boost/asio.hpp>
+#include <vector>
+#include <cstdint>
+#include <iostream>
+
+using boost::asio::ip::tcp;
+
+struct PaddingClient {
+    tcp::socket socket;
+    PaddingClient(boost::asio::io_context& io_context, const std::string& hostname, int port)
+        : socket(io_context) {
+        tcp::resolver resolver(io_context);
+        boost::asio::connect(socket, resolver.resolve(hostname, std::to_string(port)));
+    }
+
+    void send(const std::vector<uint8_t>& data){
+        boost::asio::write(socket, boost::asio::buffer(data));
+    }
+
+    std::vector<uint8_t> receive(int length){
+        std::vector<uint8_t> data(length);
+        boost::asio::read(socket, boost::asio::buffer(data, length));
+        return data;
+    }
+};
+
+std::vector<uint8_t> attack_block(const std::string& hostname, int port, const std::vector<uint8_t>& block, const std::vector<uint8_t>& previous_block){
+    // Implement attack logic
+    // Placeholder implementation
+    std::vector<uint8_t> plaintext_block(block.size(), 0);
+    // Actual implementation needed
+    return plaintext_block;
+}
+
+std::vector<uint8_t> padding_attack(const std::string& hostname, int port, const std::vector<uint8_t>& iv, const std::vector<uint8_t>& ciphertext){
+    std::vector<uint8_t> plaintext;
+    std::vector<uint8_t> text = iv;
+    text.insert(text.end(), ciphertext.begin(), ciphertext.end());
+
+    for(size_t i=16; i < text.size(); i +=16){
+        std::vector<uint8_t> block_to_decrypt(text.begin()+i, text.begin()+i+16);
+        std::vector<uint8_t> previous_block(text.begin()+i-16, text.begin()+i);
+        std::vector<uint8_t> decrypted_block = attack_block(hostname, port, block_to_decrypt, previous_block);
+        plaintext.insert(plaintext.end(), decrypted_block.begin(), decrypted_block.end());
+    }
+
+    // Remove padding
+    if(!plaintext.empty()){
+        uint8_t pad = plaintext.back();
+        if(pad <=16){
+            plaintext.erase(plaintext.end() - pad, plaintext.end());
+        }
+    }
+    return plaintext;
+}
+
+
+===========================================
+File: src/algorithms/padding_oracle.h
+===========================================
+
+// src/algorithms/padding_oracle.h
+#ifndef PADDING_ORACLE_H
+#define PADDING_ORACLE_H
+
+#include <vector>
+#include <string>
+#include <cstdint>
+
+// Function to perform padding oracle attack
+std::vector<uint8_t> padding_attack(const std::string& hostname, int port, const std::vector<uint8_t>& iv, const std::vector<uint8_t>& ciphertext);
+
+#endif // PADDING_ORACLE_H
+
+
+===========================================
+File: src/algorithms/sea128.cpp
+===========================================
+
+// sea128.cpp
+#include "sea128.h"
+#include <botan/block_cipher.h>
+#include <botan/aes.h>
+#include <stdexcept>
+#include "gcm.h" // If needed
+
+std::vector<uint8_t> aes_encrypt(const std::vector<uint8_t>& key, const std::vector<uint8_t>& input) {
+    Botan::AES_128 aes;
+    aes.set_key(key);
+    std::vector<uint8_t> output(input.size());
+
+    for(size_t i = 0; i < input.size(); i += 16) {
+        aes.encrypt_n(&input[i], &output[i], 1);
+    }
+
+    return output;
+}
+
+std::vector<uint8_t> aes_decrypt(const std::vector<uint8_t>& key, const std::vector<uint8_t>& input) {
+    Botan::AES_128 aes;
+    aes.set_key(key);
+    std::vector<uint8_t> output(input.size());
+
+    for(size_t i = 0; i < input.size(); i += 16) {
+        aes.decrypt_n(&input[i], &output[i], 1);
+    }
+
+    return output;
+}
+
+const std::vector<uint8_t> SEA_CONST = {
+    0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0xc0, 0xff,
+    0xee, 0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee, 0x11
+};
+
+std::vector<uint8_t> encrypt_sea(const std::vector<uint8_t>& key, const std::vector<uint8_t>& input){
+    // Encrypt using SEA
+    std::vector<uint8_t> encrypted = aes_encrypt(key, input);
+    for(size_t i = 0; i < encrypted.size(); ++i){
+        encrypted[i] ^= SEA_CONST[i];
+    }
+    return encrypted;
+}
+
+std::vector<uint8_t> decrypt_sea(const std::vector<uint8_t>& key, const std::vector<uint8_t>& input){
+    // Decrypt using SEA (XOR with SEA_CONST)
+    std::vector<uint8_t> decrypted(input.size());
+    for(size_t i = 0; i < input.size(); ++i){
+        decrypted[i] = input[i] ^ SEA_CONST[i];
+    }
+
+    return aes_decrypt(key, decrypted);
+}
+
+
+===========================================
+File: src/algorithms/sea128.h
+===========================================
+
+// sea128.h
+#ifndef SEA128_H
+#define SEA128_H
+
+#include <string>
+#include <vector>
+#include <cstdint>
+
+// Encrypt using SEA128
+std::vector<uint8_t> encrypt_sea(const std::vector<uint8_t>& key, const std::vector<uint8_t>& input);
+
+// Decrypt using SEA128
+std::vector<uint8_t> decrypt_sea(const std::vector<uint8_t>& key, const std::vector<uint8_t>& input);
+
+// AES Encrypt
+std::vector<uint8_t> aes_encrypt(const std::vector<uint8_t>& input, const std::vector<uint8_t>& key);
+
+// AES Decrypt
+std::vector<uint8_t> aes_decrypt(const std::vector<uint8_t>& input, const std::vector<uint8_t>& key);
+
+#endif // SEA128_H
+
+
+===========================================
+File: src/algorithms/xex_fde.cpp
+===========================================
+
+// src/algorithms/xex_fde.cpp
+#include "xex_fde.h"
+#include "sea128.h"
+#include <vector>
+#include <string>
+#include <stdexcept>
+
+// Helper function to multiply tweak by alpha
+void mul_alpha(std::vector<uint8_t>& tweak){
+    bool carry = (tweak[15] & 0x80) !=0;
+    for(int i=15; i>0; --i){
+        tweak[i] = (tweak[i] <<1) | (tweak[i-1] >>7);
+    }
+    tweak[0] = (tweak[0] <<1);
+    if(carry){
+        tweak[0] ^= 0x87;
+    }
+}
+
+std::vector<uint8_t> crypt_fde(const std::vector<uint8_t>& key, std::vector<uint8_t> tweak, const std::vector<uint8_t>& input, const std::string& mode){
+    if(key.size() !=32){
+        throw std::invalid_argument("Key must be 32 bytes");
+    }
+    std::vector<uint8_t> k1(key.begin(), key.begin()+16);
+    std::vector<uint8_t> k2(key.begin()+16, key.end());
+
+    tweak = encrypt_sea(k2, tweak);
+
+    std::vector<uint8_t> output;
+    std::string crypt_mode = mode == "encrypt" ? "encrypt_sea" : "decrypt_sea";
+
+    for(size_t i=0; i < input.size(); i +=16){
+        std::vector<uint8_t> block(input.begin()+i, input.begin() + std::min(i + 16, input.size()));
+        // XOR with tweak
+        for(size_t j=0; j<block.size(); ++j){
+            block[j] ^= tweak[j];
+        }
+        // Encrypt/decrypt
+        std::vector<uint8_t> crypt_block;
+        if(mode == "encrypt"){
+            crypt_block = encrypt_sea(k1, block);
+        }
+        else{
+            crypt_block = decrypt_sea(k1, block);
+        }
+        // XOR with tweak
+        for(size_t j=0; j<crypt_block.size(); ++j){
+            crypt_block[j] ^= tweak[j];
+        }
+        // Append to output
+        output.insert(output.end(), crypt_block.begin(), crypt_block.end());
+        // Multiply tweak by alpha
+        mul_alpha(tweak);
+    }
+    return output;
+}
+
+std::vector<uint8_t> encrypt_fde(const std::vector<uint8_t>& key, const std::vector<uint8_t>& tweak, const std::vector<uint8_t>& input){
+    std::vector<uint8_t> tweak_copy = tweak;
+    return crypt_fde(key, tweak_copy, input, "encrypt");
+}
+
+std::vector<uint8_t> decrypt_fde(const std::vector<uint8_t>& key, const std::vector<uint8_t>& tweak, const std::vector<uint8_t>& input){
+    std::vector<uint8_t> tweak_copy = tweak;
+    return crypt_fde(key, tweak_copy, input, "decrypt");
+}
+
+
+===========================================
+File: src/algorithms/xex_fde.h
+===========================================
+
+// src/algorithms/xex_fde.h
+#ifndef XEX_FDE_H
+#define XEX_FDE_H
+
+#include <vector>
+#include <string>
+#include <cstdint> // Added to define uint8_t
+
+// Encrypt using XEX FDE
+std::vector<uint8_t> encrypt_fde(const std::vector<uint8_t>& key, const std::vector<uint8_t>& tweak, const std::vector<uint8_t>& input);
+
+// Decrypt using XEX FDE
+std::vector<uint8_t> decrypt_fde(const std::vector<uint8_t>& key, const std::vector<uint8_t>& tweak, const std::vector<uint8_t>& input);
+
+#endif // XEX_FDE_H

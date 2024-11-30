@@ -190,3 +190,55 @@ Polynomial Polynomial::gcd(const Polynomial& other) const {
     }
     return a.monic();
 }
+
+
+Polynomial Polynomial::gfpoly_powmod(const Polynomial& M, int k) const {
+    if (k < 0) {
+        throw std::invalid_argument("Exponent must be non-negative");
+    }
+
+    Polynomial one_fe({FieldElement(1, Semantic::GCM, true)});
+    Polynomial result = one_fe;
+
+    // Perform modular reduction on *this
+    auto [_, base] = this->divide(M);
+
+    while (k > 0) {
+        if (k & 1) {
+            // result = (result * base) % M
+            auto [tmp_q, tmp_r] = (result * base).divide(M);
+            result = tmp_r;
+        }
+        // base = (base * base) % M
+        auto [tmp_q, tmp_r] = (base * base).divide(M);
+        base = tmp_r;
+
+        k >>= 1; // Divide k by 2
+    }
+
+    return result;
+}
+
+
+Polynomial Polynomial::sqrt() const {
+    // Validate that the polynomial has only even exponents with non-zero coefficients
+    for (int i = 0; i < power; ++i) {
+        if ((i % 2 == 1) && !coefficients[i].is_zero()) {
+            throw std::invalid_argument("Polynomial must have only even exponents with non-zero coefficients.");
+        }
+    }
+
+    // Determine the degree of the resulting square root polynomial
+    int m = power / 2;
+    std::vector<FieldElement> S_coeffs(m + 1);
+
+    // Compute the coefficients of the square root polynomial
+    for (int i = 0; i <= m; ++i) {
+        FieldElement q_2i = coefficients[2 * i];
+        S_coeffs[i] = q_2i.sqrt(); // Ensure FieldElement has a sqrt() method implemented
+    }
+
+    // Create and return the reduced polynomial
+    Polynomial S(S_coeffs);
+    return S.reduce_pol();
+}

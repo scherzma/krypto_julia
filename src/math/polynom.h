@@ -19,10 +19,10 @@ public:
 
     Polynomial(const std::vector<std::string>& coeffs, Semantic semantic_type);
 
-    bool is_zero() const;
+    [[nodiscard]] bool is_zero() const;
 
     // Make reduce_pol a const method
-    Polynomial reduce_pol() const;
+    [[nodiscard]] Polynomial reduce_pol() const;
 
     bool operator<(const Polynomial& other) const;
 
@@ -34,14 +34,15 @@ public:
 
     Polynomial operator^(int exponent) const;
 
-    std::pair<Polynomial, Polynomial> divide(const Polynomial& divisor) const;
+    [[nodiscard]] std::pair<Polynomial, Polynomial> divide(const Polynomial& divisor) const;
 
     // Additional methods
-    std::vector<std::string> repr() const;
-    Polynomial monic() const;
-    Polynomial diff() const;
-    Polynomial gcd(const Polynomial& other) const;
-
+    [[nodiscard]] std::vector<std::string> repr() const;
+    [[nodiscard]] Polynomial monic() const;
+    [[nodiscard]] Polynomial diff() const;
+    [[nodiscard]] Polynomial gcd(const Polynomial& other) const;
+    [[nodiscard]] Polynomial gfpoly_powmod(const Polynomial& M, int k) const;
+    [[nodiscard]] Polynomial sqrt() const;
 private:
     // Helper methods
 };

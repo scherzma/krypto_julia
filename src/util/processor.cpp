@@ -216,7 +216,7 @@ json polynomial_powmod(const json& arguments){
 
     // Implement gfpoly_powmod
     // Placeholder:
-    Polynomial result = poly_A ^ k; // Replace with actual powmod
+    Polynomial result = poly_A.gfpoly_powmod(poly_M, k);
     return result.repr();
 }
 
@@ -244,9 +244,7 @@ json polynomial_make_monic(const json& arguments){
 json polynomial_sqrt(const json& arguments){
     std::vector<std::string> Q = arguments["Q"].get<std::vector<std::string>>();
     Polynomial poly_Q(Q, Semantic::GCM);
-    // Implement sqrt
-    // Placeholder:
-    Polynomial sqrt_poly = poly_Q; // Replace with actual sqrt
+    Polynomial sqrt_poly = poly_Q.sqrt();
     return sqrt_poly.repr();
 }
 

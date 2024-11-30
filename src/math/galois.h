@@ -49,6 +49,7 @@ public:
     [[nodiscard]] std::vector<uint8_t> to_vector() const;
     [[nodiscard]] FieldElement power(__uint128_t exponent) const;
     [[nodiscard]] FieldElement inverse() const;
+    [[nodiscard]] FieldElement sqrt() const;
 };
 
 #endif // GALOIS_FAST_H
