@@ -18,6 +18,8 @@
 #include <iostream>
 #include <set>
 
+#include "algorithms/ddf.h"
+
 
 using json = nlohmann::json;
 
@@ -280,6 +282,19 @@ json polynomial_factor_sff(const json& arguments){
 }
 
 
+json polynomial_factor_ddf(const json& arguments){
+    std::vector<std::string> F = arguments["F"].get<std::vector<std::string>>();
+    Polynomial poly_F(F, Semantic::GCM);
+    std::set<std::tuple<Polynomial, int>> factors = ddf(poly_F);
+    std::vector<std::vector<std::string>> factors_repr;
+    for(auto [factor, exponent] : factors){
+        factors_repr.emplace_back(factor.repr());
+        factors_repr.back().emplace_back(std::to_string(exponent));
+    }
+    return factors_repr;
+}
+
+
 struct Action {
     std::function<json(const json&)> func;
     std::vector<std::string> output_keys;
@@ -307,7 +322,8 @@ std::unordered_map<std::string, Action> ACTIONS{
     std::pair<std::string, Action>{"gfpoly_sqrt", Action{polynomial_sqrt, {"S"}}},
     std::pair<std::string, Action>{"gfpoly_diff", Action{polynomial_diff, {"F'"}}},
     std::pair<std::string, Action>{"gfpoly_gcd", Action{polynomial_gcd, {"G"}}},
-    std::pair<std::string, Action>{"gfpoly_factor_sff", Action{polynomial_factor_sff, {"factors"}}}
+    std::pair<std::string, Action>{"gfpoly_factor_sff", Action{polynomial_factor_sff, {"factors"}}},
+    std::pair<std::string, Action>{"gfpoly_factor_ddf", Action{polynomial_factor_ddf, {"factors"}}}
 };
 
 json process(const json& jsonContent){

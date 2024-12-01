@@ -249,11 +249,5 @@ FieldElement FieldElement::inverse() const {
     if(this->is_zero()){
         throw std::invalid_argument("Cannot invert zero element");
     }
-
-    __uint128_t exponent = 0;
-    exponent = ~exponent;
-    exponent -= 1;
-
-
-    return *this ^ exponent; // Placeholder
+    return *this ^ ~0 -1; // Should work?
 }

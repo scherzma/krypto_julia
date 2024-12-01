@@ -20,4 +20,13 @@ constexpr std::array<uint8_t, 256> bitReverseTable = []{
 
 
 
+
+
+
+
+
+
+
+
+
 #endif //LOOKUP_H

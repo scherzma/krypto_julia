@@ -5,6 +5,7 @@
 KryptoCpp is a C++ port of the original Julia project `krypto_julia`. It includes implementations of cryptographic algorithms, finite field arithmetic, and JSON-based processing.
 
 ## Directory Structure
+```
 krypto_cpp/
 ├── src/
 │   ├── algorithms/
@@ -16,6 +17,7 @@ krypto_cpp/
 │   │   ├── sea128.h
 │   │   ├── xex_fde.cpp
 │   │   ├── xex_fde.h
+│   │   ├── ...
 │   ├── math/
 │   │   ├── galois_fast.cpp
 │   │   ├── galois_fast.h
@@ -28,7 +30,7 @@ krypto_cpp/
 │   ├── Krypto.cpp
 │   ├── Krypto.h
 │   ├── main.cpp
-├── include/                  // Optional: For additional headers
+├── include/        
 ├── build/
 ├── .gitignore
 ├── CMakeLists.txt
@@ -36,31 +38,24 @@ krypto_cpp/
 ├── sample.json
 ├── sample_small.json
 └── script.py
+```
+
 
 
 ## Dependencies
 
-- **C++17**: Modern C++ features.
+- **C++23**: Modern C++ features.
 - **CMake**: Build system.
 - **OpenSSL**: Cryptographic functions.
-- **Boost.Asio**: Networking (for padding oracle).
 - **nlohmann/json**: JSON parsing (header-only library).
 
-## Setup Instructions
+## Some commands
 
-1. **Install Dependencies:**
+´´´
+gprof KryptoCpp | gprof2dot | dot -Tpng -o output.png
 
-   - **Ubuntu:**
-     ```bash
-     sudo apt-get update
-     sudo apt-get install build-essential cmake libssl-dev libboost-system-dev
-     ```
-   
-   - **nlohmann/json:**
-     Download and place the single-header `json.hpp` from [here](https://github.com/nlohmann/json/releases) into `external/json/include/nlohmann/`.
+cmake --build . --clean-first
 
-2. **Clone the Repository:**
-   
-   ```bash
-   git clone <repository_url>
-   cd krypto_cpp
+
+gprof ./KryptoCpp gmon.out > analysis.txt
+´´´
