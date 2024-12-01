@@ -65,15 +65,19 @@ Polynomial Polynomial::operator-(const Polynomial& other) const {
 }
 
 Polynomial Polynomial::operator*(const Polynomial& other) const {
-    std::vector<FieldElement> result_coeffs(this->power + other.power -1, FieldElement(0, Semantic::GCM, true));
-    for(int i=0; i<this->power; ++i){
-        for(int j=0; j<other.power; ++j){
-            result_coeffs[i+j] = result_coeffs[i+j] + (this->coefficients[i] * other.coefficients[j]);
+    std::vector<FieldElement> result_coeffs(this->power + other.power - 1, FieldElement(0, Semantic::GCM, true));
+
+    for (int i = 0; i < this->power; ++i) {
+        for (int j = 0; j < other.power; ++j) {
+            // In-place multiplication and addition of the coefficients
+            result_coeffs[i + j] = result_coeffs[i + j] + (this->coefficients[i] * other.coefficients[j]);
         }
     }
+
     Polynomial result(result_coeffs);
     return result.reduce_pol();
 }
+
 
 Polynomial Polynomial::operator^(int exponent) const {
     if(exponent ==0){

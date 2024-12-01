@@ -15,7 +15,7 @@ public:
     bool skip_manipulation;
 
     // Default constructor
-    FieldElement() 
+    FieldElement()
         : value(0), semantic(Semantic::GCM), skip_manipulation(false) {}
 
     // Parameterized constructor

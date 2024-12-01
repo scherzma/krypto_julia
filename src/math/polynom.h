@@ -22,7 +22,7 @@ public:
     [[nodiscard]] bool is_zero() const;
 
     // Make reduce_pol a const method
-    [[nodiscard]] Polynomial reduce_pol() const;
+    Polynomial reduce_pol() const;
 
     bool operator<(const Polynomial& other) const;
 

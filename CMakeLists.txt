@@ -6,6 +6,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(BOTAN_LIBRARIES "botan-2")
 
 # Find Botan
+set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -O0 -g -pg")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g -pg")
+set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} -pg")
 
 # Find OpenSSL
 find_package(OpenSSL REQUIRED)
@@ -31,6 +34,8 @@ target_include_directories(KryptoCpp PRIVATE
         ${OPENSSL_INCLUDE_DIR}  # Ensure OpenSSL includes are added
         ${BOTAN_INCLUDE_DIRS}
 )
+
+
 
 # Link libraries
 target_link_libraries(KryptoCpp PRIVATE OpenSSL::SSL OpenSSL::Crypto ${BOTAN_LIBRARIES} nlohmann_json::nlohmann_json)

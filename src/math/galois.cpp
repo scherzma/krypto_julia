@@ -45,7 +45,7 @@ FieldElement::FieldElement(const std::string& block, Semantic sem) {
 }
 
 
-FieldElement FieldElement::operator^(const __uint128_t& power) const {
+FieldElement FieldElement::operator^(const __uint128_t& power) const { //pfusch
     FieldElement result(1, this->semantic, true);
     __uint128_t base = this->value;
     __uint128_t exponent = power;
@@ -55,6 +55,19 @@ FieldElement FieldElement::operator^(const __uint128_t& power) const {
             result = result * base;
         }
         result = result * result;
+        exponent >>=1;
+    }
+    return result;
+}
+
+FieldElement FieldElement::power(__uint128_t exponent) const { //pfusch
+    FieldElement result(1, this->semantic, true);
+    FieldElement base = *this;
+    while(exponent){
+        if (exponent & 1){
+            result = result * base;
+        }
+        base = base * base;
         exponent >>=1;
     }
     return result;
@@ -152,7 +165,6 @@ FieldElement FieldElement::operator*(const FieldElement& other) const {
 
 
 FieldElement FieldElement::operator*(const __uint128_t& other) const {
-    // Convert to GCM bit representation if needed
     __uint128_t a_val = this->value;
     __uint128_t b_val = other;
 
@@ -223,20 +235,6 @@ FieldElement FieldElement::operator*(const __uint128_t& other) const {
     return {result, this->semantic, true};
 }
 
-FieldElement FieldElement::power(__uint128_t exponent) const {
-    FieldElement result(1, this->semantic, true);
-    FieldElement base = *this;
-
-    while(exponent > 0){
-        if (exponent & 1){
-            result = result * base;
-        }
-        base = base * base;
-        exponent >>=1;
-    }
-    return result;
-}
-
 FieldElement FieldElement::inverse() const {
     if(this->is_zero()){
         throw std::invalid_argument("Cannot invert zero element");
@@ -247,5 +245,5 @@ FieldElement FieldElement::inverse() const {
     exponent -= 1;
 
 
-    return *this ^ exponent;
+    return *this ^ exponent; // Placeholder
 }
