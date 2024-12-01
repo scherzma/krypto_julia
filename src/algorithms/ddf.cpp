@@ -30,8 +30,7 @@ Polynomial powmod_128(const Polynomial A, const Polynomial& M) {
 std::set<std::tuple<Polynomial, int>> ddf(const Polynomial& f) {
     std::set<std::tuple<Polynomial, int>> z;
 
-    __uint128_t q = 1 << 128;
-    std::cout << (q == 0) << std::endl;
+    // __uint128_t q = 1 << 128;
     __uint128_t d = 1;
     Polynomial fstar = f;
     Polynomial one = Polynomial({FieldElement(1, Semantic::GCM, true)});
@@ -40,9 +39,10 @@ std::set<std::tuple<Polynomial, int>> ddf(const Polynomial& f) {
 
     while(fstar.power - 1 >= d + d) {
         Polynomial h = zero;
-        for (int i = 0; i < d - 1; ++i) {
+        for (int i = 0; i < d; ++i) { // this part is clearly wrong
             h = powmod_128(X, fstar);
         }
+        h  = h - X;
         Polynomial g = h.gcd(fstar);
         if(g != one){
             z.emplace(g, d);
