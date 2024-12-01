@@ -28,6 +28,8 @@ public:
     FieldElement(const FieldElement&) = default;
     FieldElement(FieldElement&&) noexcept = default;
 
+    bool operator!=(const FieldElement& other) const;
+    bool operator==(const FieldElement& other) const;
     FieldElement& operator=(const FieldElement&) = default;
     FieldElement& operator=(FieldElement&&) noexcept = default;
     FieldElement operator^(const __uint128_t& other) const;

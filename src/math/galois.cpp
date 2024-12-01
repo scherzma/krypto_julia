@@ -45,6 +45,16 @@ FieldElement::FieldElement(const std::string& block, Semantic sem) {
 }
 
 
+bool FieldElement::operator!=(const FieldElement& other) const {
+    return !(*this == other);
+}
+
+bool FieldElement::operator==(const FieldElement& other) const {
+    return this->value == other.value &&
+           this->semantic == other.semantic;
+}
+
+
 FieldElement FieldElement::operator^(const __uint128_t& power) const { //pfusch
     FieldElement result(1, this->semantic, true);
     __uint128_t base = this->value;

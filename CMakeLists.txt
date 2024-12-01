@@ -6,9 +6,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(BOTAN_LIBRARIES "botan-2")
 
 # Find Botan
-set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -O0 -g -pg")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g -pg")
-set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} -pg")
+#set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -O0 -g -pg")
+#set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g -pg")
+#set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} -pg")
+set("-O2")
 
 # Find OpenSSL
 find_package(OpenSSL REQUIRED)
@@ -24,7 +25,9 @@ file(GLOB_RECURSE SOURCES "src/*.cpp")
 add_executable(KryptoCpp ${SOURCES}
         src/util/lookup.h
         src/util/helper_functions.h
-        src/math/galois.h)
+        src/math/galois.h
+        src/algorithms/sff.cpp
+        src/algorithms/sff.h)
 
 # Specify include directories for the target
 target_include_directories(KryptoCpp PRIVATE

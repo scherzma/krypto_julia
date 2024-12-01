@@ -26,14 +26,18 @@ public:
 
     bool operator<(const Polynomial& other) const;
 
+    Polynomial(const Polynomial&) = default;
+    Polynomial& operator=(const Polynomial&) = default;
+    Polynomial& operator=(Polynomial&&) noexcept = default;
+    bool operator!=(const Polynomial& other) const;
+    bool operator==(const Polynomial& other) const;
+
     Polynomial operator+(const Polynomial& other) const;
-
     Polynomial operator-(const Polynomial& other) const;
-
     Polynomial operator*(const Polynomial& other) const;
-
     Polynomial operator^(int exponent) const;
 
+    Polynomial operator/(const Polynomial& divisor) const;
     [[nodiscard]] std::pair<Polynomial, Polynomial> divide(const Polynomial& divisor) const;
 
     // Additional methods

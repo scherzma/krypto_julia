@@ -95,6 +95,20 @@ Polynomial Polynomial::operator^(int exponent) const {
     return result.reduce_pol();
 }
 
+Polynomial Polynomial::operator/(const Polynomial& divisor) const {
+    auto [Q, R] = this->divide(divisor);
+    return Q;
+}
+
+bool Polynomial::operator!=(const Polynomial& other) const {
+    return !(*this == other);
+}
+
+bool Polynomial::operator==(const Polynomial& other) const {
+    return coefficients == other.coefficients;
+}
+
+
 std::pair<Polynomial, Polynomial> Polynomial::divide(const Polynomial& divisor) const {
     if(divisor.is_zero()){
         throw std::invalid_argument("Division by zero polynomial");
