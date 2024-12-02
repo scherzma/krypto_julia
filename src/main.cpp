@@ -6,7 +6,7 @@
 using json = nlohmann::json;
 
 int main(int argc, char* argv[]) {
-    // std::string file = "/home/user/Documents/Uni/Krypto/krypto_julia/sample.json";
+    // std::string file = "/sample.json";
 
 
 

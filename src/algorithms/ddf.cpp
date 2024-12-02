@@ -6,43 +6,39 @@
 
 #include <iostream>
 #include <ostream>
+#include <set>
 
-Polynomial powmod_128(const Polynomial A, const Polynomial& M) {
+
+Polynomial powmod_128(const Polynomial A, const Polynomial& M, __uint128_t k) {
     Polynomial one_fe({FieldElement(1, Semantic::GCM, true)});
-    Polynomial result = one_fe;
 
-    // Perform modular reduction on *this
-    auto [_, base] = A.divide(M);
+    Polynomial base = A % M;
 
-    for(int i=0; i<128; ++i){
-        auto [tmp_q, tmp_r] = (base * base).divide(M);
-        base = tmp_r;
+    for(int i=0; i<128 * k; ++i){
+        base = (base * base) % M;
     }
 
-    auto [tmp_q, tmp_r] = (result * base).divide(M);
-    result = tmp_r;
 
-    return result;
+    return base;
 }
+
 
 
 
 std::set<std::tuple<Polynomial, int>> ddf(const Polynomial& f) {
     std::set<std::tuple<Polynomial, int>> z;
 
-    // __uint128_t q = 1 << 128;
     __uint128_t d = 1;
     Polynomial fstar = f;
     Polynomial one = Polynomial({FieldElement(1, Semantic::GCM, true)});
     Polynomial zero = Polynomial({FieldElement(0, Semantic::GCM, true)});
-    Polynomial X = Polynomial({FieldElement(1, Semantic::GCM, true), FieldElement(0, Semantic::GCM, true)});
+    Polynomial X = Polynomial({FieldElement(0, Semantic::GCM, true), FieldElement(1, Semantic::GCM, true)});
 
-    while(fstar.power - 1 >= d + d) {
+    while(fstar.power - 1 >= 2*d) {
         Polynomial h = zero;
-        for (int i = 0; i < d; ++i) { // this part is clearly wrong
-            h = powmod_128(X, fstar);
-        }
+        h = powmod_128(X, fstar, d);
         h  = h - X;
+        h = h % fstar;
         Polynomial g = h.gcd(fstar);
         if(g != one){
             z.emplace(g, d);

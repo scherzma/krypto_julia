@@ -96,8 +96,13 @@ Polynomial Polynomial::operator^(int exponent) const {
 }
 
 Polynomial Polynomial::operator/(const Polynomial& divisor) const {
-    auto [Q, R] = this->divide(divisor);
+    auto [Q, _] = this->divide(divisor);
     return Q;
+}
+
+Polynomial Polynomial::operator%(const Polynomial& divisor) const {
+    auto [_, R] = this->divide(divisor);
+    return R;
 }
 
 bool Polynomial::operator!=(const Polynomial& other) const {
