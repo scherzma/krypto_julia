@@ -3,9 +3,6 @@
 # Exit on error
 set -e
 
-
-
-rm -rf building
 rm -f kauma
 
 # Create and enter build directory
@@ -13,7 +10,6 @@ mkdir -p building
 cd building
 
 # Configure and build
-cmake ..
 make -j4
 
 # Create symlink to executable
