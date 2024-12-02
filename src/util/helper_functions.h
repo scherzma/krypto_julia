@@ -14,8 +14,6 @@
 #include <algorithm>
 #include <iostream>
 
-#include "lookup.h"
-
 
 inline std::string uint128_to_string(__uint128_t value) {
     if (value == 0) return "0";
