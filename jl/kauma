@@ -2,7 +2,7 @@
 
 using JSON
 
-include("src/Krypto.jl")
+include("src_jl/Krypto.jl")
 using .Krypto: process
 
 function main()

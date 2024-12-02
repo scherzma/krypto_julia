@@ -1,26 +1,262 @@
 {
   "testcases": {
-    "poly2block4GCMasd": {
-      "action": "poly2block",
+    "gfmul1gcm": {
+      "action": "gfmul",
       "arguments": {
         "semantic": "gcm",
-        "coefficients": [
-          64, 2
+        "a": "ARIAAAAAAAAAAAAAAAAAgA==",
+        "b": "AgAAAAAAAAAAAAAAAAAAAA=="
+      }
+    },
+    "gcm_decrypt_sdxea1281": {
+      "action": "gcm_decrypt",
+      "arguments": {
+        "algorithm": "sea128",
+        "nonce": "VOkKCCnH4EYE1z4L",
+        "key": "ByMrTiLP7isfBDL7vsKkOQ==",
+        "ciphertext": "UdpDzPAafM+y",
+        "ad": "UknNF3AKBaF/8GUnFUw=",
+        "tag": "sN0+1fG+WSOHMswF7IBnZA=="
+      }
+    },
+    "gfmul2gcm": {
+      "action": "gfmul",
+      "arguments": {
+        "semantic": "gcm",
+        "a": "AAAAAAAAAAAAAAAQBAAAAA==",
+        "b": "IAAAAAAAAACAAAAAAAAAAA=="
+      }
+    },
+    "encryptSEA128": {
+      "action": "sea128",
+      "arguments": {
+        "mode": "encrypt",
+        "key": "istDASeincoolerKEYrofg==",
+        "input": "yv66vvrO263eyviIiDNEVQ=="
+      }
+    },
+    "decryptSEA128": {
+      "action": "sea128",
+      "arguments": {
+        "mode": "decrypt",
+        "key": "istDASeincoolerKEYrofg==",
+        "input": "D5FDo3iVBoBN9gVi9/MSKQ=="
+      }
+    },
+    "gcm_encrypt": {
+      "action": "gcm_encrypt",
+      "arguments": {
+        "algorithm": "aes128",
+        "nonce": "4gF+BtR3ku/PUQci",
+        "key": "Xjq/GkpTSWoe3ZH0F+tjrQ==",
+        "plaintext": "RGFzIGlzdCBlaW4gVGVzdA==",
+        "ad": "QUQtRGF0ZW4="
+      }
+    },
+    "encryptXEX": {
+      "action": "xex",
+      "arguments": {
+        "mode": "encrypt",
+        "key": "B1ygNO/CyRYIUYhTSgoUysX5Y/wWLi4UiWaVeloUWs0=",
+        "tweak": "6VXORr+YYHrd2nVe0OlA+Q==",
+        "input": "/aOg4jMocLkBLkDLgkHYtFKc2L9jjyd2WXSSyxXQikpMY9ZRnsJE76e9dW9olZIW"
+      }
+    },
+    "gcm_encrypt_sea128": {
+      "action": "gcm_encrypt",
+      "arguments": {
+        "algorithm": "sea128",
+        "nonce": "4gF+BtR3ku/PUQci",
+        "key": "Xjq/GkpTSWoe3ZH0F+tjrQ==",
+        "plaintext": "RGFzIGlzdCBlaW4gVGVzdA==",
+        "ad": "QUQtRGF0ZW4="
+      }
+    },
+    "gcm_decrypt_aes128": {
+      "action": "gcm_decrypt",
+      "arguments": {
+        "algorithm": "aes128",
+        "nonce": "SwVYf3IJ2p/VTiyz",
+        "key": "bYfxz4zIS8NGWT55xSGy7Q==",
+        "ciphertext": "ltCrCEYjUCHd",
+        "ad": "w8pc8/yCt2zxERPVcsnOMx8/HmrfAfGUQtD+vyMMpJ5lrF2S",
+        "tag": "d4Z2uVRSmpVE1TEa/Zhx9A=="
+      }
+    },
+    "polynomial_add_zero": {
+      "action": "gfpoly_add",
+      "arguments": {
+        "A": [
+          "NeverGonnaGiveYouUpAAA==",
+          "NeverGonnaLetYouDownAA==",
+          "NeverGonnaRunAroundAAA==",
+          "AndDesertYouAAAAAAAAAA=="
+        ],
+        "B": [
+          "KryptoanalyseAAAAAAAAA==",
+          "DHBWMannheimAAAAAAAAAA=="
         ]
       }
     },
-    "block2poly5GCM": {
-      "action": "block2poly",
+    "polynomial_add": {
+      "action": "gfpoly_add",
       "arguments": {
-        "semantic": "gcm",
-        "block": "AAABxQgAAAAAAAQQAAAAAA=="
+        "A": [
+          "NeverGonnaGiveYouUpAAA==",
+          "NeverGonnaLetYouDownAA==",
+          "NeverGonnaRunAroundAAA==",
+          "AndDesertYouAAAAAAAAAA=="
+        ],
+        "B": [
+          "NeverGonnaGiveYouUpAAA==",
+          "NeverGonnaLetYouDownAA==",
+          "NeverGonnaRunAroundAAA==",
+          "AndDesertYouAAAAAAAAAA=="
+        ]
       }
     },
-    "block2poly3GCM": {
-      "action": "block2poly",
+    "gfpoly_mul": {
+      "action": "gfpoly_mul",
       "arguments": {
-        "semantic": "gcm",
-        "block": "ARIAAAAAAAAAAAAAAAAAgA=="
+        "A": [
+          "JAAAAAAAAAAAAAAAAAAAAA==",
+          "wAAAAAAAAAAAAAAAAAAAAA==",
+          "ACAAAAAAAAAAAAAAAAAAAA=="
+        ],
+        "B": [
+          "0AAAAAAAAAAAAAAAAAAAAA==",
+          "IQAAAAAAAAAAAAAAAAAAAA=="
+        ]
+      }
+    },
+    "gfpoly_pow": {
+      "action": "gfpoly_pow",
+      "arguments": {
+        "A": [
+          "JAAAAAAAAAAAAAAAAAAAAA==",
+          "wAAAAAAAAAAAAAAAAAAAAA==",
+          "ACAAAAAAAAAAAAAAAAAAAA=="
+        ],
+        "k": 3
+      }
+    },
+    "gfdiv": {
+      "action": "gfdiv",
+      "arguments": {
+        "a": "JAAAAAAAAAAAAAAAAAAAAA==",
+        "b": "wAAAAAAAAAAAAAAAAAAAAA=="
+      }
+    },
+    "gfpoly_divmod": {
+      "action": "gfpoly_divmod",
+      "arguments": {
+        "A": [
+          "JAAAAAAAAAAAAAAAAAAAAA==",
+          "wAAAAAAAAAAAAAAAAAAAAA==",
+          "ACAAAAAAAAAAAAAAAAAAAA=="
+        ],
+        "B": [
+          "0AAAAAAAAAAAAAAAAAAAAA==",
+          "IQAAAAAAAAAAAAAAAAAAAA=="
+        ]
+      }
+    },
+    "gfpoly_powmod": {
+      "action": "gfpoly_powmod",
+      "arguments": {
+        "A": [
+          "JAAAAAAAAAAAAAAAAAAAAA==",
+          "wAAAAAAAAAAAAAAAAAAAAA==",
+          "ACAAAAAAAAAAAAAAAAAAAA=="
+        ],
+        "M": [
+          "KryptoanalyseAAAAAAAAA==",
+          "DHBWMannheimAAAAAAAAAA=="
+        ],
+        "k": 1000
+      }
+    },
+    "gfpoly_sort": {
+      "action": "gfpoly_sort",
+      "arguments": {
+        "polys": [
+          [
+            "NeverGonnaGiveYouUpAAA==",
+            "NeverGonnaLetYouDownAA==",
+            "NeverGonnaRunAroundAAA==",
+            "AndDesertYouAAAAAAAAAA=="
+          ],
+          [
+            "WereNoStrangersToLoveA==",
+            "YouKnowTheRulesAAAAAAA==",
+            "AndSoDoIAAAAAAAAAAAAAA=="
+          ],
+          [
+            "NeverGonnaMakeYouCryAA==",
+            "NeverGonnaSayGoodbyeAA==",
+            "NeverGonnaTellALieAAAA==",
+            "AndHurtYouAAAAAAAAAAAA=="
+          ]
+        ]
+      }
+    },
+    "gfpoly_diff": {
+      "action": "gfpoly_diff",
+      "arguments": {
+        "F": [
+          "IJustWannaTellYouAAAAA==",
+          "HowImFeelingAAAAAAAAAA==",
+          "GottaMakeYouAAAAAAAAAA==",
+          "UnderstaaaaaaaaaaaaanQ=="
+        ]
+      }
+    },
+    "gfpoly_gcd": {
+      "action": "gfpoly_gcd",
+      "arguments": {
+        "A": [
+          "DNWpXnnY24XecPa7a8vrEA==",
+          "I8uYpCbsiPaVvUznuv1IcA==",
+          "wsbiU432ARWuO93He3vbvA==",
+          "zp0g3o8iNz7Y+8oUxw1vJw==",
+          "J0GekE3uendpN6WUAuJ4AA==",
+          "wACd0e6u1ii4AAAAAAAAAA==",
+          "ACAAAAAAAAAAAAAAAAAAAA=="
+        ],
+        "B": [
+          "I20VjJmlSnRSe88gaDiLRQ==",
+          "0Cw5HxJm/pfybJoQDf7/4w==",
+          "8ByrMMf+vVj5r3YXUNCJ1g==",
+          "rEU/f2UZRXqmZ6V7EPKfBA==",
+          "LfdALhvCrdhhGZWl9l9DSg==",
+          "KSUKhN0n6/DZmHPozd1prw==",
+          "DQrRkuA9Zx279wAAAAAAAA==",
+          "AhCEAAAAAAAAAAAAAAAAAA=="
+        ]
+      }
+    },
+    "gfpoly_factor_sff": {
+      "action": "gfpoly_factor_sff",
+      "arguments": {
+        "F": [
+          "vL77UwAAAAAAAAAAAAAAAA==",
+          "mEHchYAAAAAAAAAAAAAAAA==",
+          "9WJa0MAAAAAAAAAAAAAAAA==",
+          "akHfwWAAAAAAAAAAAAAAAA==",
+          "E12o/QAAAAAAAAAAAAAAAA==",
+          "vKJ/FgAAAAAAAAAAAAAAAA==",
+          "yctWwAAAAAAAAAAAAAAAAA==",
+          "c1BXYAAAAAAAAAAAAAAAAA==",
+          "o0AtAAAAAAAAAAAAAAAAAA==",
+          "AbP2AAAAAAAAAAAAAAAAAA==",
+          "k2YAAAAAAAAAAAAAAAAAAA==",
+          "vBYAAAAAAAAAAAAAAAAAAA==",
+          "dSAAAAAAAAAAAAAAAAAAAA==",
+          "69gAAAAAAAAAAAAAAAAAAA==",
+          "VkAAAAAAAAAAAAAAAAAAAA==",
+          "a4AAAAAAAAAAAAAAAAAAAA==",
+          "gAAAAAAAAAAAAAAAAAAAAA=="
+        ]
       }
     }
   }

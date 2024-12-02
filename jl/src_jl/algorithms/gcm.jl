@@ -19,7 +19,7 @@ function ghash(key::Array{UInt8}, nonce::Array{UInt8}, text::Array{UInt8}, ad::A
     for i in 1:16:(length(data) - 1)
         Y += data[i:i+15]
         Y *= auth_key
-    end
+    end 
 
     tag = Y + enc_func("AES128", key, [nonce; UInt8[0,0,0,1]])
 
@@ -31,7 +31,6 @@ function crypt_gcm(key::Array{UInt8}, text::Array{UInt8}, nonce::Array{UInt8}, a
 
     result_text = Array{UInt8}(undef, 0)
     enc_func = algorithm == "aes128" ? encrypt : encrypt_sea
-
 
     counter = 2
     for i in 1:16:(length(text))
@@ -49,6 +48,7 @@ end
 
 function decrypt_gcm(key::Array{UInt8}, ciphertext::Array{UInt8}, ad::Array{UInt8}, nonce::Array{UInt8}, algorithm::String)
     auth_tag = ghash(key, nonce, ciphertext, ad, algorithm)
+    println("auth_tag: ", auth_tag[1])
     plaintext = crypt_gcm(key, ciphertext, nonce, algorithm)
     return plaintext, auth_tag[1], auth_tag[2], auth_tag[3]
 end

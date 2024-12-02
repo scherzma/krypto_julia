@@ -1,23 +1,61 @@
-# Krypto Julia
+# KryptoCpp
 
-A cryptographic toolkit implementing various encryption algorithms and Galois field operations in Julia.
+## Overview
 
-## Installation
+KryptoCpp is a C++ port of the original Julia project `krypto_julia`. It includes implementations of cryptographic algorithms, finite field arithmetic, and JSON-based processing.
 
-```julia
-using Pkg
-Pkg.add("JSON")
-Pkg.add("Nettle")
-Pkg.add("BenchmarkTools")  # Only needed for running tests
+## Directory Structure
+```
+krypto_cpp/
+├── src/
+│   ├── algorithms/
+│   │   ├── gcm.cpp
+│   │   ├── gcm.h
+│   │   ├── padding_oracle.cpp
+│   │   ├── padding_oracle.h
+│   │   ├── sea128.cpp
+│   │   ├── sea128.h
+│   │   ├── xex_fde.cpp
+│   │   ├── xex_fde.h
+│   │   ├── ...
+│   ├── math/
+│   │   ├── galois_fast.cpp
+│   │   ├── galois_fast.h
+│   │   ├── polynom.cpp
+│   │   ├── polynom.h
+│   ├── util/
+│   │   ├── processor.cpp
+│   │   ├── processor.h
+│   │   ├── semantic_types.h
+│   ├── Krypto.cpp
+│   ├── Krypto.h
+│   ├── main.cpp
+├── include/        
+├── build/
+├── .gitignore
+├── CMakeLists.txt
+├── README.md
+├── sample.json
+├── sample_small.json
+└── script.py
 ```
 
-## Usage
 
-Run the program with:
-```bash
-julia --threads=auto kauma [input_file]
-```
 
-The program accepts JSON input files. If no input file is specified, it uses `./sample.json` by default.
+## Dependencies
 
-See `sample.json` and `sample_small.json` for example inputs.
+- **C++23**: Modern C++ features.
+- **CMake**: Build system.
+- **OpenSSL**: Cryptographic functions.
+- **nlohmann/json**: JSON parsing (header-only library).
+
+## Some commands
+
+´´´
+gprof KryptoCpp | gprof2dot | dot -Tpng -o output.png
+
+cmake --build . --clean-first
+
+
+gprof ./KryptoCpp gmon.out > analysis.txt
+´´´

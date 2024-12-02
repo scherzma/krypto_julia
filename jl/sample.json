@@ -192,6 +192,15 @@
           "ad": "QUQtRGF0ZW4="
         }
     },
+    "NON-EXISTING-ACTION": {
+      "action":"testingshit",
+      "arguments":{
+         "hostname":"localhost",
+         "port":18652,
+         "iv":"j/YTn+2VIxEnPhjSKqBJCA==",
+         "ciphertext":"VUamnKUs7CalB27Uz/+HDwqrk77W/y9rGu0zp76QHRVSXeyckEDjjxgNQvSQ7uzePFtlFxs9O5c1BQHmlmA65ndNNTbOrtU/vLDEJBxqCZ0="
+      }
+    },
     "gcm_encrypt_sea128": {
       "action": "gcm_encrypt",
       "arguments": {

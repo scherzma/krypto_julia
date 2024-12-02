@@ -95,6 +95,9 @@ function gcm_crypt(jsonContent::Dict, mode::String)
         return base64encode(result[1]), result[2].to_block(), base64encode(result[3]), result[4].to_block()
     elseif mode == "decrypt"
         result = decrypt_gcm(key_bytes, text_bytes, ad_bytes, nonce_bytes, algorithm)
+        println("result: ", result[2].to_block())
+        println("result[2]: ", result[2])
+        println("tag: ", tag)
         return result[2].to_block() == tag, base64encode(result[1])
     end
 

@@ -96,7 +96,6 @@ function Base.:*(a::FieldElement, b::FieldElement)::FieldElement
     tmp_a::UInt128 = a.value
     tmp_b::UInt128 = b.value
 
-
     if (tmp_b & UInt128(1)) == 1
         aggregate ⊻= tmp_a
     end
@@ -143,7 +142,9 @@ function Base.:/(a::FieldElement, b::FieldElement)::FieldElement
     if b.value == 0
         throw(ErrorException("Division by zero"))
     end
-    return a * inverse(b)
+    inverse_b = inverse(b)
+    println("inverse_b: ", inverse_b)
+    return a * inverse_b
 end
 
 
@@ -180,7 +181,6 @@ end
 function to_block(a::FieldElement)::String
     bytes = Vector{UInt8}(undef, 16)
     value::UInt128 = a.value
-
     
     if a.semantic == XEX
         bytes = reinterpret(UInt8, [value])

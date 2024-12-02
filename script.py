@@ -7,7 +7,7 @@ SCRIPT_DIR = Path(__file__).parent.absolute()
 # Configuration
 output_file = SCRIPT_DIR / "source_files_content.txt"
 file_extensions = {'.cpp', '.h', '.txt', '.jl', 'kauma'}  # Using set for faster lookups
-blacklist_dirs = {'build.jl', 'Krypto', '.git', 'node_modules', 'build', 'cmake-build-debug', '.vscode', '.idea', 'venv', 'MyAppCompiled', '.venv', 'testing'}
+blacklist_dirs = {'jl', 'build.jl', 'Krypto', '.git', 'node_modules', 'build', 'cmake-build-debug', '.vscode', '.idea', 'venv', 'MyAppCompiled', '.venv', 'testing'}
 
 
 def write_structure(file, path, prefix="", include_files=True):
