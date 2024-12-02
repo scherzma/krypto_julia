@@ -12,6 +12,7 @@ public:
     std::vector<FieldElement> coefficients;
     int power;
 
+    Polynomial() = default;
     Polynomial(const std::vector<FieldElement>& coeffs)
         : coefficients(coeffs), power(coeffs.size()) {
         reduce_pol();
@@ -48,6 +49,7 @@ public:
     [[nodiscard]] Polynomial gcd(const Polynomial& other) const;
     [[nodiscard]] Polynomial gfpoly_powmod(const Polynomial& M, int k) const;
     [[nodiscard]] Polynomial sqrt() const;
+    static Polynomial random(int degree);
 private:
     // Helper methods
 };

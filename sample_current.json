@@ -2,21 +2,24 @@
   "testcases": {
 
 
-    "gfpoly_factor_ddf": {
-      "action": "gfpoly_factor_ddf",
+    "gfpoly_factor_edf":{
+      "action": "gfpoly_factor_edf",
       "arguments": {
         "F": [
-          "tpkgAAAAAAAAAAAAAAAAAA==",
-          "m6MQAAAAAAAAAAAAAAAAAA==",
-          "8roAAAAAAAAAAAAAAAAAAA==",
-          "3dUAAAAAAAAAAAAAAAAAAA==",
+          "mmAAAAAAAAAAAAAAAAAAAA==",
+          "AbAAAAAAAAAAAAAAAAAAAA==",
+          "zgAAAAAAAAAAAAAAAAAAAA==",
           "FwAAAAAAAAAAAAAAAAAAAA==",
-          "/kAAAAAAAAAAAAAAAAAAAA==",
-          "a4AAAAAAAAAAAAAAAAAAAA==",
+          "AAAAAAAAAAAAAAAAAAAAAA==",
+          "wAAAAAAAAAAAAAAAAAAAAA==",
           "gAAAAAAAAAAAAAAAAAAAAA=="
-        ]
+        ],
+        "d": 3
       }
     }
+
+
+
 
   }
 }

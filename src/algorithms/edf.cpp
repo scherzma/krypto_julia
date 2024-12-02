@@ -4,28 +4,53 @@
 
 #include "edf.h"
 
+#include <iostream>
+#include <ostream>
+
+
+Polynomial powmod_128_div3(const Polynomial A, const Polynomial& M, __uint128_t k) {
+    Polynomial one_fe({FieldElement(1, Semantic::GCM, true)});
+
+    Polynomial result = A % M;
+    Polynomial base = result;
+
+    for(int i=0; i<((128 * k) - 1) / 3; ++i){
+        result = result * base;
+        result = (result * result) % M;
+        result = (result * result) % M;
+    }
+
+    return result;
+}
+
 
 std::set<Polynomial> edf(const Polynomial& f, int d) {
     Polynomial one = Polynomial({FieldElement(1, Semantic::GCM, true)});
-    Polynomial h = one; // TODO: Default constructor implementation
+    Polynomial h = Polynomial();
 
-    __uint128_t q = 1 << 128;
-    __uint128_t n = f.power / d;
+    // q = 1 << 128
+    __uint128_t n = (f.power - 1) / d;
     std::set<Polynomial> z;
     z.insert(f);
 
     while(z.size() < n) {
-        h = one; // TODO: RandPoly()
-        Polynomial temp = one; // TODO: das exponent zeug
-        Polynomial g = (temp - one) % f;
+        h = Polynomial::random(f.power - 1);
+        Polynomial g = powmod_128_div3(h, f, d) - one;
+        if (z.size() >= 2) {
+            std::cout << z.size() << std::endl;
+        }
 
         for(Polynomial u : z) {
             if (u.power > d) {
                 Polynomial j = u.gcd(g);
                 if (j != one && j != u) {
                     z.erase(u);
+                    z.insert(j);
+                    z.insert(u / j);
                 }
             }
         }
     }
+
+    return z;
 }

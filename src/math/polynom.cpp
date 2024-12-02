@@ -265,3 +265,14 @@ Polynomial Polynomial::sqrt() const {
     Polynomial S(S_coeffs);
     return S.reduce_pol();
 }
+
+Polynomial Polynomial::random(int degree) {
+    Polynomial result;
+
+    for (int i = 0; i < degree; ++i) {
+        result.coefficients.push_back(FieldElement::random());
+    }
+    result.power = result.coefficients.size();
+
+    return result;
+}

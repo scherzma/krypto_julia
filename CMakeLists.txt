@@ -23,7 +23,6 @@ file(GLOB_RECURSE SOURCES "src/*.cpp")
 
 # Add executable
 add_executable(KryptoCpp ${SOURCES}
-        src/util/lookup.h
         src/util/helper_functions.h
         src/math/galois.h
         src/algorithms/sff.cpp

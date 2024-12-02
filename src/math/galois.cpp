@@ -10,7 +10,7 @@
 #include "util/base64_utils.h"
 #include "util/helper_functions.h"
 #include <immintrin.h>
-
+#include <random>
 
 FieldElement::FieldElement(unsigned __int128 val, Semantic sem, bool skip) {
     if (skip) {
@@ -250,4 +250,20 @@ FieldElement FieldElement::inverse() const {
         throw std::invalid_argument("Cannot invert zero element");
     }
     return *this ^ ~0 -1; // Should work?
+}
+
+__uint128_t fast_random(__uint128_t& seed) {
+    seed = (seed + 1) * 6364136223846793005ULL;
+    return seed;
+}
+
+FieldElement FieldElement::random() {
+    FieldElement result;
+    result.value = static_cast<__uint128_t>(rand()) << 96 |
+                       static_cast<__uint128_t>(rand()) << 64 |
+                       static_cast<__uint128_t>(rand()) << 32 |
+                       static_cast<__uint128_t>(rand());;
+    result.semantic = Semantic::GCM;
+    // print_uint128(result.value);
+    return result;
 }

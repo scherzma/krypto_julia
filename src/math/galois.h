@@ -52,6 +52,7 @@ public:
     [[nodiscard]] FieldElement power(__uint128_t exponent) const;
     [[nodiscard]] FieldElement inverse() const;
     [[nodiscard]] FieldElement sqrt() const;
+    static FieldElement random();
 };
 
 #endif // GALOIS_FAST_H

@@ -15,6 +15,22 @@
 #include <iostream>
 
 
+inline void print_uint128(__uint128_t value) {
+    if (value == 0) {
+        std::cout << 0;
+        return;
+    }
+
+    char buffer[40] = {0};
+    int pos = 39;
+    while (value > 0) {
+        buffer[--pos] = '0' + (value % 10);
+        value /= 10;
+    }
+
+    std::cout << &buffer[pos] << std::endl;
+}
+
 inline std::string uint128_to_string(__uint128_t value) {
     if (value == 0) return "0";
     std::string result;
