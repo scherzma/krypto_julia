@@ -1,0 +1,50 @@
+#!/bin/bash
+
+# Exit on error
+set -e
+
+# Configuration
+CXX="g++"
+CXXFLAGS="-std=c++23 -O2 -msse4.1 -mpclmul"
+OUTPUT="KryptoCpp"
+
+# Include directories
+INCLUDES="-I. -I./src -I/usr/include/botan-2"
+
+# Libraries to link
+LIBS="-lssl -lcrypto -lbotan-2"
+
+# Source files
+SOURCES=(
+    src/algorithms/ddf.cpp
+    src/algorithms/edf.cpp
+    src/algorithms/gcm.cpp
+    src/algorithms/padding_oracle.cpp
+    src/algorithms/sea128.cpp
+    src/algorithms/sff.cpp
+    src/algorithms/xex_fde.cpp
+    src/main.cpp
+    src/math/galois.cpp
+    src/math/polynom.cpp
+    src/util/base64_utils.cpp
+    src/util/processor.cpp
+)
+
+# Create build directory if it doesn't exist
+mkdir -p building
+
+# Compile each source file
+echo "Compiling source files..."
+OBJECTS=()
+for source in "${SOURCES[@]}"; do
+    object="building/$(basename "${source%.*}").o"
+    OBJECTS+=("$object")
+    echo "Compiling $source -> $object"
+    $CXX $CXXFLAGS $INCLUDES -c "$source" -o "$object"
+done
+
+# Link everything together
+echo "Linking..."
+$CXX "${OBJECTS[@]}" -o "building/$OUTPUT" $LIBS
+
+echo "Build complete! Binary is at building/$OUTPUT"
