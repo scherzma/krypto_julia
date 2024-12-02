@@ -1,3 +1,0 @@
-/home/user/CLionProjects/krypto_julia/building/CMakeFiles/KryptoCpp.dir
-/home/user/CLionProjects/krypto_julia/building/CMakeFiles/edit_cache.dir
-/home/user/CLionProjects/krypto_julia/building/CMakeFiles/rebuild_cache.dir
