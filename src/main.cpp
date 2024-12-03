@@ -10,8 +10,8 @@ int main(int argc, char* argv[]) {
 
 
 
-    // std::string file = "../sample_small.json";
-    std::string file = "../sample_current.json";
+    std::string file = "../sample_small.json";
+    // std::string file = "../sample_current.json";
 
 
     if(argc == 2) {
@@ -33,10 +33,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    //for (int i = 0; i < 1000; ++i) {
-    //    json result = process(jsonContent);
+    for (int i = 0; i < 10; ++i) {
+        json result = process(jsonContent);
         //std::cout << result.dump() << std::endl;
-    //}
+    }
     json result = process(jsonContent);
     std::cout << result.dump() << std::endl;
 

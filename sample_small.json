@@ -273,6 +273,21 @@
           "gAAAAAAAAAAAAAAAAAAAAA=="
         ]
       }
+    },
+    "gfpoly_factor_edf":{
+      "action": "gfpoly_factor_edf",
+      "arguments": {
+        "F": [
+          "mmAAAAAAAAAAAAAAAAAAAA==",
+          "AbAAAAAAAAAAAAAAAAAAAA==",
+          "zgAAAAAAAAAAAAAAAAAAAA==",
+          "FwAAAAAAAAAAAAAAAAAAAA==",
+          "AAAAAAAAAAAAAAAAAAAAAA==",
+          "wAAAAAAAAAAAAAAAAAAAAA==",
+          "gAAAAAAAAAAAAAAAAAAAAA=="
+        ],
+        "d": 3
+      }
     }
   }
 }

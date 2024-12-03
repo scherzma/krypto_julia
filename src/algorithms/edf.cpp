@@ -11,15 +11,13 @@
 Polynomial powmod_128_div3(const Polynomial A, const Polynomial& M, __uint128_t k) {
     Polynomial one_fe({FieldElement(1, Semantic::GCM, true)});
 
-    Polynomial result = A % M;
-    Polynomial base = result;
-
-    for(int i=0; i<((128 * k) - 1) / 3; ++i){
-        result = result * base;
+    Polynomial result = one_fe;
+    for(int i=0; i<((128 * k) - 1) / 2; ++i){
+        result = result * A % M;
         result = (result * result) % M;
         result = (result * result) % M;
     }
-
+    result = result * A;
     return result;
 }
 

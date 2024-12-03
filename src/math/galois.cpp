@@ -264,6 +264,5 @@ FieldElement FieldElement::random() {
                        static_cast<__uint128_t>(rand()) << 32 |
                        static_cast<__uint128_t>(rand());;
     result.semantic = Semantic::GCM;
-    // print_uint128(result.value);
     return result;
 }
