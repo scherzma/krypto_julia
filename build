@@ -3,5 +3,9 @@
 rm -rf building
 rm -f kauma
 
+if [ -d "/dut" ]; then
+    cd /dut
+fi
+
 make -j4
 ln -sf building/KryptoCpp kauma
