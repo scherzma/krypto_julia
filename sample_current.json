@@ -4,6 +4,15 @@
 
 
 
+    "gfmul2gcm": {
+      "action": "gfmul",
+      "arguments": {
+        "semantic": "gcm",
+        "a": "AAAAAAAAAAAAAAAQBAAAAA==",
+        "b": "IAAAAAAAAACAAAAAAAAAAA=="
+      }
+    }
+
 
 
 

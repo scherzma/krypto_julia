@@ -75,16 +75,6 @@ inline __uint128_t reverse_bytes_int(__uint128_t value) {
 }
 
 
-inline uint64_t reverse_bits_64(uint64_t n) {
-    n = ((n & 0xAAAAAAAAAAAAAAAA) >> 1) | ((n & 0x5555555555555555) << 1); // Swap adjacent bits
-    n = ((n & 0xCCCCCCCCCCCCCCCC) >> 2) | ((n & 0x3333333333333333) << 2); // Swap pairs of bits
-    n = ((n & 0xF0F0F0F0F0F0F0F0) >> 4) | ((n & 0x0F0F0F0F0F0F0F0F) << 4); // Swap nibbles (4 bits)
-    n = ((n & 0xFF00FF00FF00FF00) >> 8) | ((n & 0x00FF00FF00FF00FF) << 8); // Swap bytes
-    n = ((n & 0xFFFF0000FFFF0000) >> 16) | ((n & 0x0000FFFF0000FFFF) << 16); // Swap 16-bit words
-    n = (n >> 32) | (n << 32); // Swap 32-bit halves
-    return n;
-}
-
 
 
 inline __uint128_t reverse_bits(__uint128_t n) {
@@ -111,9 +101,9 @@ inline __uint128_t reverse_bits(__uint128_t n) {
 
 inline __uint128_t int_to_semantic(__uint128_t val, Semantic sem) {
     if(sem == Semantic::GCM) {
-        return reverse_bits(val);
+        return val;
     }
-    return reverse_bytes_int(val);
+    return reverse_bits(reverse_bytes_int(val));
 }
 
 #endif //HELPER_FUNCTIONS_H

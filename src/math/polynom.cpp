@@ -38,10 +38,10 @@ bool Polynomial::operator<(const Polynomial& other) const {
         return false;
     }
     for(int i = power -1; i>=0; --i){
-        if(this->coefficients[i].value < other.coefficients[i].value){
+        if(this->coefficients[i] < other.coefficients[i]){
             return true;
         }
-        if(other.coefficients[i].value < this->coefficients[i].value){
+        if(other.coefficients[i] < this->coefficients[i]){
             return false;
         }
     }

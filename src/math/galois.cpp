@@ -14,7 +14,7 @@
 
 FieldElement::FieldElement(unsigned __int128 val, Semantic sem, bool skip) {
     if (skip) {
-        this->value = val;
+        this->value = reverse_bits(val);
         this->semantic = sem;
         this->skip_manipulation = true;
     } else {
@@ -28,7 +28,7 @@ FieldElement::FieldElement(const std::vector<uint8_t>& val, Semantic sem) {
     __uint128_t aggregate = 0;
     __uint128_t one = 1;
     for(uint8_t x : val) {
-        aggregate |= (one << x);
+        aggregate |= (one << 127 - x);
     }
     this->value = aggregate;
     this->semantic = sem;
@@ -83,22 +83,9 @@ FieldElement FieldElement::power(__uint128_t exponent) const { //pfusch
     return result;
 }
 
-FieldElement FieldElement::operator>>(int b) const {
-    return {this->value >> b, this->semantic, true};
-}
-
-FieldElement FieldElement::operator%(const __uint128_t& b) const {
-    return {this->value % b, this->semantic, true};
-}
-
 FieldElement FieldElement::operator/(const FieldElement& other) const { // TODO: Implement this
     return *this * other.inverse();
 }
-
-FieldElement FieldElement::operator%(const FieldElement& other) const {
-    return *this;
-}
-
 
 FieldElement FieldElement::sqrt() const {
     if (this->is_zero()) {
@@ -126,11 +113,11 @@ std::string FieldElement::to_block() const {
     std::vector<uint8_t> bytes;
 
     if(semantic == Semantic::GCM) {
-        __uint128_t reversed = reverse_bits(value);
+        __uint128_t reversed = value;
         bytes = int_to_bytes(reversed);
         reverse_bytes_vector(bytes);
     } else if(semantic == Semantic::XEX) {
-        bytes = int_to_bytes(value);
+        bytes = int_to_bytes(reverse_bits(value));
     }
 
     return base64_encode(bytes);
@@ -138,7 +125,7 @@ std::string FieldElement::to_block() const {
 
 std::vector<uint8_t> FieldElement::to_polynomial() const {
     std::vector<uint8_t> poly;
-    __uint128_t temp = value;
+    __uint128_t temp = reverse_bits(value);
     uint8_t position = 0;
     while (temp != 0) {
         if (temp & 1)
@@ -150,7 +137,7 @@ std::vector<uint8_t> FieldElement::to_polynomial() const {
 }
 
 std::vector<uint8_t> FieldElement::to_vector() const {
-    return int_to_bytes(value);
+    return int_to_bytes(reverse_bits(value));
 }
 
 bool FieldElement::is_zero() const {
@@ -158,11 +145,11 @@ bool FieldElement::is_zero() const {
 }
 
 FieldElement FieldElement::operator+(const FieldElement& other) const {
-    return {this->value ^ other.value, this->semantic, true};
+    return {this->value ^ other.value, this->semantic, false};
 }
 
 FieldElement FieldElement::operator+(const std::vector<uint8_t>& other) const {
-    return {this->value ^ int_to_semantic(bytes_to_uint128(other), this->semantic), this->semantic, true};
+    return {this->value ^ int_to_semantic(bytes_to_uint128(other), this->semantic), this->semantic, false};
 }
 
 FieldElement FieldElement::operator-(const FieldElement& other) const {
@@ -173,13 +160,13 @@ FieldElement FieldElement::operator*(const FieldElement& other) const {
     return *this * other.value;
 }
 
+bool FieldElement::operator<(const FieldElement& other) const {
+    return this->value > other.value;
+}
 
 FieldElement FieldElement::operator*(const __uint128_t& other) const {
     __uint128_t a_val = this->value;
     __uint128_t b_val = other;
-
-    a_val = reverse_bits(a_val);
-    b_val = reverse_bits(b_val);
 
     // Split into high and low 64-bit parts
     uint64_t a_hi = static_cast<uint64_t>(a_val >> 64);
@@ -240,9 +227,7 @@ FieldElement FieldElement::operator*(const __uint128_t& other) const {
     result_lo = _mm_extract_epi64(tmp6, 0);
 
     __uint128_t result = (static_cast<__uint128_t>(result_hi) << 64) | result_lo;
-
-    result = reverse_bits(result);
-    return {result, this->semantic, true};
+    return {result, this->semantic, false};
 }
 
 FieldElement FieldElement::inverse() const {

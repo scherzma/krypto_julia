@@ -6,7 +6,7 @@
 using json = nlohmann::json;
 
 int main(int argc, char* argv[]) {
-    // std::string file = "/sample.json";
+    // std::string file = "../sample.json";
 
 
 
@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < 100; ++i) {
         json result = process(jsonContent);
         //std::cout << result.dump() << std::endl;
     }
