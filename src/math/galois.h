@@ -35,10 +35,15 @@ public:
     FieldElement operator^(const __uint128_t& other) const;
     FieldElement operator/(const FieldElement& other) const;
     FieldElement operator+(const FieldElement& other) const;
+    FieldElement& operator+=(const FieldElement& other);
+
     FieldElement operator+(const std::vector<uint8_t> &other) const;
     FieldElement operator-(const FieldElement& other) const;
     FieldElement operator*(const FieldElement& other) const;
     FieldElement operator*(const __uint128_t& other) const;
+
+    FieldElement& operator*=(const FieldElement& other);
+    FieldElement& operator*=(const __uint128_t& other);
 
     bool operator<(const FieldElement& other) const;
     [[nodiscard]] std::string bit_string() const;

@@ -38,6 +38,9 @@ public:
     Polynomial operator*(const Polynomial& other) const;
     Polynomial operator^(int exponent) const;
 
+    Polynomial& operator*=(const Polynomial& other);
+
+
     Polynomial operator/(const Polynomial& divisor) const;
     Polynomial operator%(const Polynomial& divisor) const;
     [[nodiscard]] std::pair<Polynomial, Polynomial> divide(const Polynomial& divisor) const;

@@ -9,15 +9,17 @@
 
 
 Polynomial powmod_128_div3(const Polynomial A, const Polynomial& M, __uint128_t k) {
-    Polynomial one_fe({FieldElement(1, Semantic::GCM, true)});
-
-    Polynomial result = one_fe;
+    Polynomial result({FieldElement(1, Semantic::GCM, true)});
     for(int i=0; i<((128 * k) - 1) / 2; ++i){
-        result = result * A % M;
-        result = (result * result) % M;
-        result = (result * result) % M;
+        result *= A;
+        result = result % M;
+        result *= result;
+        result = result % M;
+        result *= result;
+        result = result % M;
     }
-    result = result * A;
+    result *= A;
+    result = result % M;
     return result;
 }
 
@@ -30,6 +32,7 @@ std::set<Polynomial> edf(const Polynomial& f, int d) {
     __uint128_t n = (f.power - 1) / d;
     std::set<Polynomial> z;
     z.insert(f);
+
 
     while(z.size() < n) {
         h = Polynomial::random(f.power - 1);

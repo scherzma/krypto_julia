@@ -10,14 +10,12 @@
 
 
 Polynomial powmod_128(const Polynomial A, const Polynomial& M, __uint128_t k) {
-    Polynomial one_fe({FieldElement(1, Semantic::GCM, true)});
-
     Polynomial base = A % M;
 
     for(int i=0; i<128 * k; ++i){
-        base = (base * base) % M;
+        base *= base;
+        base = base % M;
     }
-
 
     return base;
 }

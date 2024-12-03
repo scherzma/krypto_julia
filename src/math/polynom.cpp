@@ -1,6 +1,7 @@
 // src/math/polynom.cpp
 #include "polynom.h"
 #include <algorithm>
+#include <iostream>
 #include <stdexcept>
 
 Polynomial::Polynomial(const std::vector<std::string>& coeffs, Semantic semantic_type){
@@ -65,19 +66,34 @@ Polynomial Polynomial::operator-(const Polynomial& other) const {
 }
 
 Polynomial Polynomial::operator*(const Polynomial& other) const {
-    std::vector<FieldElement> result_coeffs(this->power + other.power - 1, FieldElement(0, Semantic::GCM, true));
+    Polynomial result = *this; // Initialize result as a copy of the current polynomial
+    result *= other; // Use the in-place multiplication operator
+    return result;
+}
 
+
+Polynomial& Polynomial::operator*=(const Polynomial& other) {
+    if (this->power == 0 || other.power == 0) {
+        this->coefficients = {FieldElement(0, Semantic::GCM, true)};
+        this->power = 1;
+        return *this;
+    }
+
+    std::vector<FieldElement> result_coeffs(this->power + other.power - 1, FieldElement(0, Semantic::GCM, true));
+    FieldElement temp;
     for (int i = 0; i < this->power; ++i) {
         for (int j = 0; j < other.power; ++j) {
-            // In-place multiplication and addition of the coefficients
-            result_coeffs[i + j] = result_coeffs[i + j] + (this->coefficients[i] * other.coefficients[j]);
+            temp = this->coefficients[i];
+            temp *= other.coefficients[j];
+            result_coeffs[i + j] += temp;
         }
     }
 
-    Polynomial result(result_coeffs);
-    return result.reduce_pol();
+    this->coefficients = result_coeffs;
+    this->power = this->coefficients.size();
+    *this = this->reduce_pol();
+    return *this;
 }
-
 
 Polynomial Polynomial::operator^(int exponent) const {
     if(exponent ==0){
@@ -85,11 +101,11 @@ Polynomial Polynomial::operator^(int exponent) const {
     }
     Polynomial result({FieldElement(1, Semantic::GCM, true)});
     Polynomial base = *this;
-    while(exponent >0){
+    while(exponent > 0){
         if(exponent &1){
-            result = result * base;
+            result *= base;
         }
-        base = base * base;
+        base *= base;
         exponent >>=1;
     }
     return result.reduce_pol();
@@ -182,7 +198,7 @@ Polynomial Polynomial::monic() const {
     FieldElement lead_coeff_inv = this->coefficients[this->power -1].inverse();
     std::vector<FieldElement> new_coeffs = this->coefficients;
     for(auto& coeff : new_coeffs){
-        coeff = coeff * lead_coeff_inv;
+        coeff *= lead_coeff_inv;
     }
     Polynomial result(new_coeffs);
     return result.reduce_pol();

@@ -279,6 +279,10 @@ json polynomial_factor_sff(const json& arguments){
         factors_repr.emplace_back(factor.repr());
         factors_repr.back().emplace_back(std::to_string(exponent));
     }
+    std::sort(factors_repr.begin(), factors_repr.end(),
+        [](const auto& a, const auto& b) {
+            return a.back() > b.back();
+        });    std::reverse(factors_repr.begin(), factors_repr.end());
     return factors_repr;
 }
 
@@ -292,6 +296,10 @@ json polynomial_factor_ddf(const json& arguments){
         factors_repr.emplace_back(factor.repr());
         factors_repr.back().emplace_back(std::to_string(exponent));
     }
+    std::sort(factors_repr.begin(), factors_repr.end(),
+        [](const auto& a, const auto& b) {
+            return a.back() > b.back();
+        });    std::reverse(factors_repr.begin(), factors_repr.end());
     return factors_repr;
 }
 
@@ -300,12 +308,21 @@ json polynomial_factor_edf(const json& arguments){
     std::vector<std::string> F = arguments["F"].get<std::vector<std::string>>();
     Polynomial poly_F(F, Semantic::GCM);
     int d = arguments["d"];
-    std::set<Polynomial> factors = edf(poly_F, d);
-    std::vector<std::vector<std::string>> factors_repr;
-    for (auto factor : factors){
-        factors_repr.emplace_back(factor.repr());
+    std::set<Polynomial> polys = edf(poly_F, d);
+
+
+    std::vector<Polynomial> polys_vec;
+    for(const auto& poly : polys){
+        polys_vec.emplace_back(poly);
     }
-    return factors_repr;
+    std::sort(polys_vec.begin(), polys_vec.end());
+    std::reverse(polys_vec.begin(), polys_vec.end());
+    std::vector<std::vector<std::string>> sorted_polys;
+    for(const auto& poly : polys_vec){
+        sorted_polys.emplace_back(poly.repr());
+    }
+
+    return sorted_polys;
 }
 
 

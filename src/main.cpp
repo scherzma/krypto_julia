@@ -33,10 +33,12 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    for (int i = 0; i < 100; ++i) {
-        json result = process(jsonContent);
-        //std::cout << result.dump() << std::endl;
+    std::string combinedResults;
+    for (int i = 0; i < 10; ++i) {
+        combinedResults += process(jsonContent).dump();
     }
+    std::cout << combinedResults.length() << std::endl;
+
     json result = process(jsonContent);
     std::cout << result.dump() << std::endl;
 
